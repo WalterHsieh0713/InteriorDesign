@@ -1166,6 +1166,12 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           </button>
           {/* The social workstream's entire integration ask: one link. */}
           <a
+            href="/rooms"
+            className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+          >
+            Rooms
+          </a>
+          <a
             href={`/share?session=${sessionId}`}
             className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
           >

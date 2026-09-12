@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 
 type Photo = { name: string; url: string; createdAt: string | null };
@@ -70,6 +71,22 @@ export default function Home() {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-8 text-center">
+      {/* Rooms already scanned were unreachable from anywhere in the app — you
+          had to know a session UUID by heart. */}
+      <nav className="absolute right-4 top-4 flex gap-2 text-sm">
+        <Link
+          href="/rooms"
+          className="rounded-full border border-black/10 px-3 py-1.5 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+        >
+          Scanned rooms
+        </Link>
+        <Link
+          href="/feed"
+          className="rounded-full border border-black/10 px-3 py-1.5 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+        >
+          Feed
+        </Link>
+      </nav>
       <h1 className="text-2xl font-bold">Room Scanner</h1>
       <p className="text-gray-500 max-w-sm">
         Scan this QR code on your phone to start photographing the room.
