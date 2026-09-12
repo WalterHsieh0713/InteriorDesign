@@ -33,6 +33,7 @@ function getServerSessionId(): string | null {
 
 export default function Home() {
   const router = useRouter();
+  const [started, setStarted] = useState(false);
   const [mode, setMode] = useState<Mode | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [inferring, setInferring] = useState(false);
@@ -129,6 +130,24 @@ export default function Home() {
         </Link>
       }
     >
+      {!started ? (
+        <div className="mx-auto flex max-w-lg flex-col items-center py-16 text-center">
+          <h1 className="text-3xl font-semibold tracking-tight">Plans</h1>
+          <p className="tb mt-3 max-w-sm text-[13px] text-[var(--pencil)]">
+            Measure a real room, then see what everyone else did with theirs.
+          </p>
+          <button
+            type="button"
+            onClick={() => setStarted(true)}
+            className="tb mt-8 rounded-[2px] bg-[var(--ink)] px-6 py-3 text-[13px] uppercase tracking-wider text-white"
+          >
+            Scan a room
+          </button>
+          <Link href="/feed" className="tb mt-4 text-[12px] text-[var(--blueline)] underline underline-offset-4">
+            Or browse plans
+          </Link>
+        </div>
+      ) : (
       <div className="mx-auto max-w-lg">
         <h1 className="text-xl font-semibold tracking-tight">Scan a room</h1>
         <p className="tb mt-1 text-[12px] text-[var(--pencil)]">
@@ -219,6 +238,7 @@ export default function Home() {
           </div>
         )}
       </div>
+      )}
     </PlansShell>
   );
 }
