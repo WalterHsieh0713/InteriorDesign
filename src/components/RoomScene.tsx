@@ -347,6 +347,8 @@ function MeasuredWalls({
   wallColor,
   ceilingColor,
   height,
+  width,
+  length,
   cameras,
   occluders,
 }: {
@@ -354,11 +356,32 @@ function MeasuredWalls({
   wallColor: string;
   ceilingColor: string;
   height: number;
+  width: number;
+  length: number;
   cameras: PreparedCamera[];
   occluders: ReturnType<typeof prepareOccluders>;
 }) {
   const wallMap = useMemo(() => getTexture("plaster", 6), []);
   const wallOpacity = cameras.length > 0 ? 0.95 : 0.88;
+
+  // The ceiling takes the same outline as the floor, so the two agree about
+  // the shape of the room. It used to be a hardcoded 40 x 40 m plane, which
+  // overhangs a typical 8.9 x 7.2 m scan by roughly 15 m on every side — the
+  // rectangular fallback in `Walls` had always sized itself correctly, this
+  // path just never did. Falls back to the room box if the segments don't
+  // chain into a closed outline, which is what the floor does too.
+  const ceilingShape = useMemo(() => {
+    const outline = wallOutline(walls);
+    if (!outline) return null;
+
+    // Same shape-space mapping as the floor: (a, b) -> world (a, y, -b) under
+    // the -90° X rotation below, so ceiling and floor line up exactly.
+    const shape = new THREE.Shape();
+    shape.moveTo(outline[0].x, -outline[0].y);
+    for (const p of outline.slice(1)) shape.lineTo(p.x, -p.y);
+    shape.closePath();
+    return new THREE.ShapeGeometry(shape);
+  }, [walls]);
 
   const baked = useMemo(
     () =>
@@ -401,8 +424,15 @@ function MeasuredWalls({
       {/* A ceiling, so a pendant has something to hang from — measured walls
           don't say where the ceiling plane is on their own, so this still
           uses the room's overall height like the fallback box does. */}
-      <WallPanel axis="y" sign={1} limit={height} position={[0, height, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[40, 40]} />
+      <WallPanel
+        axis="y"
+        sign={1}
+        limit={height}
+        position={[0, height, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        {...(ceilingShape ? { geometry: ceilingShape } : {})}
+      >
+        {!ceilingShape && <planeGeometry args={[width, length]} />}
         <meshStandardMaterial
           color={ceilingColor}
           side={THREE.DoubleSide}
@@ -413,16 +443,32 @@ function MeasuredWalls({
       </WallPanel>
       {walls.map((w, i) => {
         const { color, flipped } = baked[i];
+
+        // Drawn up to the ceiling rather than at its measured height.
+        //
+        // RoomPlan measures each segment separately and routinely reports one
+        // shorter than the room — the live scans have segments of 2.09 m in a
+        // 2.73 m room, where the capture clipped the wall above a door or
+        // under a soffit. Rendered at that height, every short segment leaves
+        // a band of open space between its top and the ceiling.
+        //
+        // Only the vertical extent is stretched. Position, width and yaw are
+        // the measurements furniture placement depends on and are untouched,
+        // and the colour bake above still samples the wall's *measured*
+        // rectangle, because that is the part a camera actually saw.
+        const base = w.position[1] - w.dimensions[1] / 2;
+        const renderHeight = Math.max(w.dimensions[1], height - base);
+
         return (
           <mesh
             key={i}
-            position={w.position}
+            position={[w.position[0], base + renderHeight / 2, w.position[2]]}
             // Turned so the front face points into the room, which is what
             // makes backface culling work below.
             rotation={[0, w.rotationY + (flipped ? Math.PI : 0), 0]}
             receiveShadow
           >
-            <planeGeometry args={[w.dimensions[0], w.dimensions[1]]} />
+            <planeGeometry args={[w.dimensions[0], renderHeight]} />
             {/* Fully opaque and solved by culling rather than transparency:
                 each wall only renders its inward face, so orbiting outside
                 the room sees straight through the near walls to the interior
@@ -1079,6 +1125,8 @@ function Scene({
           wallColor={layout.room.wallColor ?? "#d8d4cd"}
           ceilingColor={layout.room.ceilingColor ?? "#e8e6e2"}
           height={layout.room.height}
+          width={layout.room.width}
+          length={layout.room.length}
           cameras={cameras}
           occluders={occluders}
         />
