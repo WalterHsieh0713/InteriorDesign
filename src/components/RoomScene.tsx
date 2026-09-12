@@ -10,6 +10,7 @@ import { modelUrlFor, toBinding, toDimensions, type CatalogItem } from "@/lib/ca
 import { initialPlacement, mountOf, snapFloorNearWall, snapToWall, supportHeightAt } from "@/lib/placement";
 import { availablePresets, rollFor, runLength, segmentsFor, type LedPreset, type LedPresetId } from "@/lib/ledPresets";
 import { projectionFor } from "@/lib/projection";
+import { buildShoppingList, type LineItem } from "@/lib/shoppingList";
 import { FRAME_DEPTH, posterLabel, type PosterArt, type PosterSize } from "@/lib/posters";
 import FurnitureMesh from "./FurnitureMesh";
 import ProductMesh from "./ProductMesh";
@@ -17,6 +18,7 @@ import CatalogPanel from "./CatalogPanel";
 import PosterMesh from "./PosterMesh";
 import LedStrips from "./LedStrips";
 import AccessoryMesh, { ProjectionScreen, accessoryKind } from "./AccessoryMesh";
+import ShoppingList from "./ShoppingList";
 import { getTexture, type TextureKind } from "./textures";
 import { prepareCameras, bakePlaneTexture, type PreparedCamera } from "./projectiveTexture";
 
@@ -644,6 +646,7 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [snapshotting, setSnapshotting] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
+  const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
   const controlsRef = useRef<{ dollyIn?: (s: number) => void; dollyOut?: (s: number) => void; update?: () => void } | null>(null);
   const glRef = useRef<THREE.WebGLRenderer | null>(null);
 
@@ -916,19 +919,38 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
     const renderer = glRef.current;
     if (!renderer) return;
     setSnapshotting(true);
-    // The Canvas is created with preserveDrawingBuffer, without which this
-    // hands back a blank PNG and reports no error at all.
-    renderer.domElement.toBlob((blob) => {
-      setSnapshotting(false);
-      if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `room-${sessionId}.png`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }, "image/png");
-  }, [sessionId]);
+    // R3F renders every frame and the Canvas is created with
+    // preserveDrawingBuffer, so the buffer already holds the current view.
+    // Without that flag this returns a blank PNG and reports no error at all.
+    setSnapshotUrl(renderer.domElement.toDataURL("image/png"));
+    setSnapshotting(false);
+  }, []);
+
+  const shoppingLines = useMemo(
+    () => buildShoppingList(layout?.objects ?? []),
+    [layout?.objects]
+  );
+
+  // A corrected price is written onto every object on that line, so the room's
+  // running total, the list, and anything published later all agree.
+  const handlePriceChange = useCallback(
+    (line: LineItem, cents: number) => {
+      const ids = new Set(line.objectIds);
+      mutateObjects((objects) =>
+        objects.map((o) => {
+          if (!ids.has(o.id)) return o;
+          if (o.binding.source === "catalog") {
+            return { ...o, binding: { ...o.binding, priceCents: cents } };
+          }
+          if (o.binding.source === "custom") {
+            return { ...o, binding: { ...o.binding, priceCents: cents } };
+          }
+          return o;
+        })
+      );
+    },
+    [mutateObjects]
+  );
 
   const initialCameraPosition = useMemo(() => {
     if (!layout) return [8, 8, 8] as const;
@@ -1076,6 +1098,55 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           </a>
         </div>
       </div>
+
+      {/* A finished design is two things: a picture to share, and the list of
+          what it would cost to actually build. */}
+      {snapshotUrl && (
+        <div className="absolute inset-0 z-30 grid place-items-center bg-black/60 p-4">
+          <div className="flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-xl dark:bg-neutral-900">
+            <div className="flex items-center justify-between border-b border-black/10 px-4 py-3 dark:border-white/10">
+              <h2 className="text-sm font-semibold">Your room, and what it costs</h2>
+              <button
+                onClick={() => setSnapshotUrl(null)}
+                aria-label="Close"
+                className="rounded px-2 py-1 text-lg leading-none text-neutral-500 hover:bg-black/5 dark:hover:bg-white/10"
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {/* eslint-disable-next-line @next/next/no-img-element -- a canvas data URL, not a remote asset */}
+              <img
+                src={snapshotUrl}
+                alt="Snapshot of the arranged room"
+                className="mb-4 w-full max-w-full rounded-lg border border-black/10 dark:border-white/10"
+              />
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                Shopping list
+              </h3>
+              <p className="mb-2 text-xs text-neutral-500">
+                Prices came from the retailer when this was built. Click one to correct it.
+              </p>
+              <ShoppingList lines={shoppingLines} onPriceChange={handlePriceChange} />
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-black/10 px-4 py-3 dark:border-white/10">
+              <a
+                href={snapshotUrl}
+                download={`room-${sessionId}.png`}
+                className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+              >
+                Download image
+              </a>
+              <a
+                href={`/share?session=${sessionId}`}
+                className="rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Share this design
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       <CatalogPanel
         open={catalogOpen}
