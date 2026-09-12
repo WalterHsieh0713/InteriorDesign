@@ -13,10 +13,16 @@ enum LayoutUploaderError: LocalizedError {
 
 enum LayoutUploader {
 
-    // TODO: set this to your deployed Vercel URL before building — check
-    // the Vercel dashboard for the exact URL. Must be https, no trailing
-    // slash.
-    static let baseURL = URL(string: "https://YOUR-DEPLOYED-URL.vercel.app")!
+    /// The *production* alias, which always serves the latest deploy.
+    ///
+    /// Do not replace this with a URL copied from a specific deployment in
+    /// the Vercel dashboard — those look like
+    /// `room-scanner-4bc23qbk8-1v3.vercel.app`, with a per-build hash, and
+    /// are pinned forever to the commit that produced them. Pointing the
+    /// app at one of those means every scan you take opens against a
+    /// frozen old copy of the web app, and shipped web fixes silently
+    /// never reach you. That already happened once.
+    static let baseURL = URL(string: "https://room-scanner-1v3.vercel.app")!
 
     /// PUTs straight to the same /api/layout endpoint the web editor uses
     /// to persist drag edits — it already validates against the real zod

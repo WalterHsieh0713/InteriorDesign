@@ -25,18 +25,18 @@ InteriorDesignTest/
                                     static viewer if the deployed URL is ever unreachable
 ```
 
-## 0. Before you build — set the deployed URL
+## 0. Deployed URL (already set)
 
-`RoomScanner/LayoutUploader.swift` has a placeholder:
+`RoomScanner/LayoutUploader.swift` points at the production alias
+`https://room-scanner-1v3.vercel.app`, which always serves the latest
+deploy. You shouldn't need to change it.
 
-```swift
-static let baseURL = URL(string: "https://YOUR-DEPLOYED-URL.vercel.app")!
-```
-
-Replace that with the actual deployed Vercel URL (ask the project owner)
-before building — the app will crash on that force-unwrap otherwise if the
-placeholder is left in and somehow resolves to nil, and will simply fail
-every upload with a network error if left pointed at a fake host.
+If you ever do change it, take the URL from Vercel's **Production**
+deployment, not from a specific build. Per-build preview URLs look like
+`room-scanner-4bc23qbk8-1v3.vercel.app` (note the hash) and are pinned
+forever to the commit that produced them — point the app at one and every
+scan opens against a frozen copy of the web app, so shipped web fixes
+never reach you.
 
 ## 1. Create the Xcode project
 
