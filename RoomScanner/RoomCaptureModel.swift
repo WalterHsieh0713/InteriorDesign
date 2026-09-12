@@ -45,7 +45,13 @@ final class RoomCaptureModel: NSObject, ObservableObject, RoomCaptureViewDelegat
     /// so a full buffer is roughly 20MB — comfortable on any device that
     /// has a LiDAR sensor in the first place.
     private let bufferLimit = 240
-    private let framesToUpload = 6
+    /// 6 was too sparse to reliably match real colors — most of a scan's
+    /// surfaces (far wall, floor under furniture, the side you walked past
+    /// once) never made it into the 6 chosen frames, so Gemini was
+    /// guessing at anything it didn't see. Each upload/Gemini call is
+    /// still cheap at this size (~16 * 80KB), so there's no cost reason to
+    /// keep it small.
+    private let framesToUpload = 16
 
     /// Picks frames by *where the camera was*, not by when. Spacing purely
     /// on time means standing still for thirty seconds yields six near
