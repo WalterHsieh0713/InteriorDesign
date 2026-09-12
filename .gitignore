@@ -1,0 +1,15 @@
+# Xcode
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# This branch predates the Next.js scaffold on main, but if you've ever
+# checked out main in this same working directory, these leftover
+# artifacts (including real secrets in .env.local) can show up as
+# untracked files here too. Never `git add -A` on this branch — ignore
+# them explicitly instead.
+node_modules/
+.next/
+.env*
+!.env.example
+next-env.d.ts
