@@ -5,7 +5,7 @@ import { PlansShell } from "@/components/social/PlansShell";
 import { FeedView } from "@/components/social/FeedView";
 
 export const metadata: Metadata = {
-  title: "Plans — scanned rooms",
+  title: "Browse rooms | Room Scanner",
   description: "Browse room layouts people have scanned and shared.",
 };
 
@@ -15,7 +15,7 @@ export default function FeedPage() {
       action={
         <Link
           href="/"
-          className="tb rounded-[2px] border border-[var(--ink)] px-3 py-1.5 text-[12px] uppercase tracking-wider hover:bg-[var(--ink)] hover:text-white"
+          className="tb rounded-full bg-[var(--amber)] px-5 py-2.5 text-[12px] uppercase tracking-wider text-[var(--on-amber)] transition-transform hover:-translate-y-px active:translate-y-0"
         >
           Scan a room
         </Link>

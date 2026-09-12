@@ -68,16 +68,16 @@ export function FilterPanel({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className={`tb flex items-center gap-2 rounded-[2px] border px-3 py-1.5 text-[12px] uppercase tracking-wider transition-colors ${
+        className={`tb flex items-center gap-2 rounded-full border px-4 py-2 text-[12px] uppercase tracking-wider transition-colors ${
           activeCount > 0 || open
-            ? "border-[var(--ink)] bg-[var(--ink)] text-white"
+            ? "border-[var(--amber)] bg-[var(--amber)] text-[var(--on-amber)]"
             : "border-[var(--rule)] bg-[var(--sheet)] text-[var(--ink)] hover:border-[var(--ink)]"
         }`}
       >
         Filters
         {activeCount > 0 && (
           <span
-            className="rounded-full bg-white px-1.5 text-[10px] text-[var(--ink)]"
+            className="rounded-full bg-[var(--ground)] px-1.5 text-[10px] text-[var(--fg)]"
             aria-label={`${activeCount} active`}
           >
             {activeCount}
@@ -91,7 +91,7 @@ export function FilterPanel({
           aria-label="Filter plans"
           /* Anchored under the button on desktop; a bottom sheet on a phone,
              where a floating panel would sit off the edge of the screen. */
-          className="fixed inset-x-0 bottom-0 z-50 max-h-[75vh] overflow-y-auto border-t border-[var(--rule)] bg-[var(--sheet)] p-4 shadow-[0_-8px_30px_-12px_rgb(18_32_58/0.35)] sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-2 sm:w-80 sm:rounded-[2px] sm:border sm:shadow-[0_10px_30px_-12px_rgb(18_32_58/0.35)]"
+          className="fixed inset-x-0 bottom-0 z-50 max-h-[75vh] overflow-y-auto border-t border-[var(--rule)] bg-[var(--sheet)] p-4 shadow-[0_-8px_30px_-12px_rgb(18_32_58/0.35)] sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-2 sm:w-80 sm:rounded-2xl sm:border sm:shadow-[0_10px_30px_-12px_rgb(18_32_58/0.35)]"
         >
           <div className="mb-4 flex items-center justify-between sm:hidden">
             <span className="tb text-[12px] uppercase tracking-wider">Filters</span>
@@ -110,7 +110,7 @@ export function FilterPanel({
           <select
             value={roomType}
             onChange={(e) => onRoomType(e.target.value)}
-            className="tb mt-1 w-full rounded-[2px] border border-[var(--rule)] bg-[var(--sheet)] px-2 py-2 text-[12px]"
+            className="tb mt-1 w-full rounded-lg border border-[var(--rule)] bg-[var(--ground)] px-3 py-2.5 text-[12px] text-[var(--fg)]"
           >
             <option value="">Any room</option>
             {ROOM_TYPES.map((r) => (
@@ -126,7 +126,7 @@ export function FilterPanel({
           <select
             value={band}
             onChange={(e) => onBand(e.target.value)}
-            className="tb mt-1 w-full rounded-[2px] border border-[var(--rule)] bg-[var(--sheet)] px-2 py-2 text-[12px]"
+            className="tb mt-1 w-full rounded-lg border border-[var(--rule)] bg-[var(--ground)] px-3 py-2.5 text-[12px] text-[var(--fg)]"
           >
             <option value="">Any size</option>
             {AREA_BANDS.map((b) => (
@@ -150,7 +150,7 @@ export function FilterPanel({
                   aria-pressed={on}
                   className={`tb rounded-full border px-3 py-1 text-[12px] transition-colors ${
                     on
-                      ? "border-[var(--blueline)] bg-[var(--blueline)] text-white"
+                      ? "border-[var(--amber)] bg-[var(--amber)] text-[var(--on-amber)]"
                       : "border-[var(--rule)] bg-[var(--sheet)] text-[var(--pencil)] hover:text-[var(--ink)]"
                   }`}
                 >

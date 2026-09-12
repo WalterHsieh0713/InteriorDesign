@@ -22,7 +22,7 @@ export async function generateMetadata({ params }: PageProps<"/p/[id]">): Promis
   if (!post) return { title: "Plan not found" };
 
   return {
-    title: `${post.room_type} · ${Math.round(post.area_m2)} m² — Plans`,
+    title: `${post.room_type}, ${Math.round(post.area_m2)} m² | Room Scanner`,
     description: post.caption ?? `A ${post.room_type} scanned and shared by @${post.author_handle}.`,
   };
 }
@@ -115,7 +115,7 @@ export default async function PostPage({ params }: PageProps<"/p/[id]">) {
           <div className="flex flex-col gap-2">
             <Link
               href={`/room?session=${encodeURIComponent(post.session_id)}`}
-              className="tb rounded-[2px] bg-[var(--ink)] px-4 py-2.5 text-center text-[12px] uppercase tracking-wider text-white"
+              className="tb rounded-full bg-[var(--amber)] px-6 py-3 text-center text-[12px] uppercase tracking-wider text-[var(--on-amber)] transition-transform hover:-translate-y-px active:translate-y-0"
             >
               Open in 3D
             </Link>

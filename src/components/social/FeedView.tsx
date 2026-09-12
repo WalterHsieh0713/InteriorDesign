@@ -247,7 +247,7 @@ export function FeedView() {
       </div>
 
       {error && (
-        <p className="mb-4 rounded-[2px] border border-[var(--stamp)] bg-white px-3 py-2 text-sm text-[var(--stamp)]">
+        <p className="mb-4 rounded-xl border border-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_12%,transparent)] px-4 py-3 text-sm text-[var(--danger)]">
           {error}
         </p>
       )}
@@ -255,7 +255,7 @@ export function FeedView() {
       {loading ? (
         <div className="grid grid-cols-2 gap-x-4 gap-y-6 md:grid-cols-3 lg:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="sheet aspect-square animate-pulse rounded-[2px]" />
+            <div key={i} className="sheet aspect-square animate-pulse rounded-2xl" />
           ))}
         </div>
       ) : posts.length > 0 ? (
@@ -270,7 +270,7 @@ export function FeedView() {
           ))}
         </div>
       ) : (
-        <div className="sheet rounded-[2px] px-6 py-16 text-center">
+        <div className="sheet rounded-2xl px-6 py-16 text-center">
           <p className="text-sm">
             {filtersActive
               ? "No plans match these filters."
@@ -296,7 +296,7 @@ export function FeedView() {
             type="button"
             onClick={loadMore}
             disabled={loadingMore}
-            className="tb rounded-[2px] border border-[var(--ink)] px-5 py-2 text-[12px] uppercase tracking-wider disabled:opacity-40"
+            className="tb rounded-full border border-[var(--line)] bg-[var(--raised)] px-6 py-2.5 text-[12px] uppercase tracking-wider transition-colors hover:border-[var(--amber-line)] hover:text-[var(--amber)] disabled:opacity-40"
           >
             {loadingMore ? "Loading…" : "Load more"}
           </button>

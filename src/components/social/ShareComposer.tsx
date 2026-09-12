@@ -156,7 +156,7 @@ export function ShareComposer({ session }: { session: string }) {
                   aria-pressed={on}
                   className={`tb rounded-full border px-3 py-1 text-[12px] transition-colors ${
                     on
-                      ? "border-[var(--blueline)] bg-[var(--blueline)] text-white"
+                      ? "border-[var(--amber)] bg-[var(--amber)] text-[var(--on-amber)]"
                       : "border-[var(--rule)] bg-[var(--sheet)] text-[var(--pencil)] hover:text-[var(--ink)]"
                   }`}
                 >
@@ -168,7 +168,7 @@ export function ShareComposer({ session }: { session: string }) {
         </div>
 
         {error && (
-          <p className="rounded-[2px] border border-[var(--stamp)] bg-white px-3 py-2 text-sm text-[var(--stamp)]">
+          <p className="rounded-xl border border-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_12%,transparent)] px-4 py-3 text-sm text-[var(--danger)]">
             {error}
           </p>
         )}
@@ -178,7 +178,7 @@ export function ShareComposer({ session }: { session: string }) {
             type="button"
             onClick={publish}
             disabled={submitting}
-            className="tb rounded-[2px] bg-[var(--ink)] px-5 py-2.5 text-[12px] uppercase tracking-wider text-white disabled:opacity-40"
+            className="tb rounded-full bg-[var(--amber)] px-6 py-3 text-[12px] uppercase tracking-wider text-[var(--on-amber)] transition-transform hover:-translate-y-px active:translate-y-0 disabled:translate-y-0 disabled:opacity-40"
           >
             {submitting ? "Publishing…" : "Publish to feed"}
           </button>

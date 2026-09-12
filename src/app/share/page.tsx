@@ -4,7 +4,7 @@ import { PlansShell } from "@/components/social/PlansShell";
 import { ShareComposer } from "@/components/social/ShareComposer";
 
 export const metadata: Metadata = {
-  title: "Share a plan",
+  title: "Share a plan | Room Scanner",
 };
 
 export default async function SharePage({ searchParams }: PageProps<"/share">) {

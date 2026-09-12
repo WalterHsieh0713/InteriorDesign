@@ -291,3 +291,56 @@ are keyed on a self-declared handle stored in one browser, so two people can
 claim the same name and one person on two devices is two people. That is the
 accepted cost of no accounts, and it is the thing to fix first if this feed
 ever matters.
+
+### v4 - 2026-09-12 - one visual world across the whole app
+
+**This entry matters to you even if you only work on the scan and the
+editor, because this revision crossed into shared files for the first time.**
+The project owner asked for the scanner and the feed to stop looking like two
+different products. Nothing about how anything works was changed: this was a
+restyle, and the owner was explicit that functionality and user flow stay
+exactly as they were.
+
+**Files we touched that are not in our column above:**
+
+- `src/app/layout.tsx` - the three fonts now load once at the root instead of
+  per area. Familjen Grotesk for titles, Hanken Grotesk for body, DM Mono for
+  measurements. The old `--font-geist-sans` and `--font-geist-mono` variables
+  are gone; if anything of yours referenced them it now falls back, so use
+  `--font-ui`, `--font-display` and `--font-mono-rs` instead.
+- `src/app/page.tsx` - restyled. **Every piece of behaviour is unchanged:** the
+  lazily minted session id through `useSyncExternalStore`, the 1.5s photo
+  poll, `generateLayout` posting to `/api/infer-layout` and pushing to
+  `/room?session=`, and the QR pointing at `/capture?session=`. What is new is
+  presentation plus two additive sections, a horizontal rail of recent posts
+  and a how-it-works block. The rail reads `/api/feed` and renders nothing at
+  all if that call fails, so it cannot break the capture flow.
+- `src/app/globals.css` - the palette is now defined at `:root` for the whole
+  app rather than only inside `.plans`, because the landing page needed it
+  too. Tokens are `--ground`, `--raised`, `--line`, `--fg`, `--fg-2`, `--fg-3`
+  and `--amber`. The app is deliberately single-theme dark now; the owner
+  compared both and picked dark.
+
+**How the feed got restyled without touching most of its components.** The old
+`.plans` variables (`--paper`, `--sheet`, `--ink`, `--pencil`, `--blueline`,
+`--stamp`, `--rule`) are now aliases pointing at the new tokens. Every social
+component was already written against those names, so remapping them in one
+place restyled the whole feed. The names now say where a colour is used
+rather than what it looks like: `--blueline` is the accent, and the accent is
+amber. Keep using them.
+
+**`src/lib/floorPlan.ts` now draws on a dark ground.** Plans used to paint the
+sampled floor and wall colours onto a near-white page, which against the dark
+UI made every thumbnail a glaring white rectangle. The page and floor are
+fixed to the palette, the measured colour survives as a low-opacity tint on
+each object, and doors and windows are picked out in amber because they are
+the constraints that decide a layout. If you are generating your own 3D
+thumbnails for `render_url`, matching that dark ground will keep the grid
+even.
+
+**Still open, unchanged by this pass:** the share button in the editor, and
+the `session_id` question at the top of this file. Also worth knowing: card
+thumbnails are still square, so the grid is a fixed grid rather than a true
+masonry. Making it masonry means teaching `floorPlanSvg` to emit each room's
+real aspect ratio, which is a behaviour change and was deliberately left out
+of a restyle.
