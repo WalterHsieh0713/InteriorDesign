@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import RoomPlan
 
 /// Owns the single RoomCaptureView instance and its session lifecycle.
