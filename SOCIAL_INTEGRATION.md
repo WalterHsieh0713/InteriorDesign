@@ -318,3 +318,149 @@ bug:** this re-ranks only the already-fetched page (`PAGE_SIZE = 24`), not
 the whole table — a well-matched post sitting on page 5 won't surface
 early. That's the documented cost of not scoring the entire table per
 request, unchanged here.
+### v4 - 2026-09-12 - one visual world across the whole app
+
+**This entry matters to you even if you only work on the scan and the
+editor, because this revision crossed into shared files for the first time.**
+The project owner asked for the scanner and the feed to stop looking like two
+different products. Nothing about how anything works was changed: this was a
+restyle, and the owner was explicit that functionality and user flow stay
+exactly as they were.
+
+**Files we touched that are not in our column above:**
+
+- `src/app/layout.tsx` - the three fonts now load once at the root instead of
+  per area. Familjen Grotesk for titles, Hanken Grotesk for body, DM Mono for
+  measurements. The old `--font-geist-sans` and `--font-geist-mono` variables
+  are gone; if anything of yours referenced them it now falls back, so use
+  `--font-ui`, `--font-display` and `--font-mono-rs` instead.
+- `src/app/page.tsx` - restyled. **Every piece of behaviour is unchanged:** the
+  lazily minted session id through `useSyncExternalStore`, the 1.5s photo
+  poll, `generateLayout` posting to `/api/infer-layout` and pushing to
+  `/room?session=`, and the QR pointing at `/capture?session=`. What is new is
+  presentation plus two additive sections, a horizontal rail of recent posts
+  and a how-it-works block. The rail reads `/api/feed` and renders nothing at
+  all if that call fails, so it cannot break the capture flow.
+
+  > **Superseded by v6.** That description was written against the
+  > Gemini photo-capture landing page, which this branch had already
+  > replaced with the LiDAR deep-link flow. The restyle was re-applied to
+  > the LiDAR page instead — see the v6 entry for what the page does now.
+- `src/app/globals.css` - the palette is now defined at `:root` for the whole
+  app rather than only inside `.plans`, because the landing page needed it
+  too. Tokens are `--ground`, `--raised`, `--line`, `--fg`, `--fg-2`, `--fg-3`
+  and `--amber`. The app is deliberately single-theme dark now; the owner
+  compared both and picked dark.
+
+**How the feed got restyled without touching most of its components.** The old
+`.plans` variables (`--paper`, `--sheet`, `--ink`, `--pencil`, `--blueline`,
+`--stamp`, `--rule`) are now aliases pointing at the new tokens. Every social
+component was already written against those names, so remapping them in one
+place restyled the whole feed. The names now say where a colour is used
+rather than what it looks like: `--blueline` is the accent, and the accent is
+amber. Keep using them.
+
+**`src/lib/floorPlan.ts` now draws on a dark ground.** Plans used to paint the
+sampled floor and wall colours onto a near-white page, which against the dark
+UI made every thumbnail a glaring white rectangle. The page and floor are
+fixed to the palette, the measured colour survives as a low-opacity tint on
+each object, and doors and windows are picked out in amber because they are
+the constraints that decide a layout. If you are generating your own 3D
+thumbnails for `render_url`, matching that dark ground will keep the grid
+even.
+
+**Still open, unchanged by this pass:** the share button in the editor, and
+the `session_id` question at the top of this file. Also worth knowing: card
+thumbnails are still square, so the grid is a fixed grid rather than a true
+masonry. Making it masonry means teaching `floorPlanSvg` to emit each room's
+real aspect ratio, which is a behaviour change and was deliberately left out
+of a restyle.
+
+### v5 - 2026-09-12 - plans are no longer square, and the grid is masonry
+
+The last entry said the square thumbnail and the fixed grid were left alone
+because changing them was behaviour rather than styling. The owner asked for
+the staggered layout, so that is now done.
+
+**`floorPlanSvg` emits a non-square canvas.** The viewBox takes the room's own
+proportion instead of always being a square that the plan is letterboxed
+into. `options.size` now means the **long** edge, not the square edge. If you
+call this anywhere, that is the one change that could surprise you.
+
+**There is a new export, `planAspect(width, length)`,** returning width over
+height for a room. It is the single source of that ratio, and anything
+rendering a plan thumbnail should set it on the element so the grid reserves
+the right height before the image loads. `PostCard` does this with an inline
+`aspect-ratio`; without it the whole feed jumps around as plans stream in.
+
+**The ratio is clamped to 0.58 - 1.70.** Real scans produce nonsense at the
+edges. There is a row in `rooms` right now measuring 2.71 x 0.22 m, a ratio
+of 12.3, and an unclamped card for it would be a sliver tall enough to push a
+column off the screen. Past the clamp the plan letterboxes inside the card,
+so the drawing stays true even where the card shape stops tracking it.
+
+**If you build 3D thumbnails for `render_url`,** match the post's
+`planAspect(width_m, length_m)` and the dark ground, or your renders will be
+the only ones in the grid that crop or letterboxed oddly.
+
+**Everywhere else that draws a plan in a fixed square box now uses
+`object-contain`** rather than `object-cover`: the landing rail,
+`/u/[handle]`, `SimilarRooms` and `ShareComposer`. The SVG ground is the same
+colour as the card ground, so the letterboxing is invisible. If you add a new
+plan thumbnail somewhere, do the same or it will crop.
+
+One honest caveat on how this looks today: most seeded rooms came from the
+same few real scans and cluster around 8.8 x 7.2 m, so the stagger is subtle.
+That is the data, not the layout, and it gets more varied as real scans land.
+
+### v6 - 2026-09-12 - the restyle lands on the combined branch
+
+v4 and v5 were built on `main`, which at that point still had the Gemini
+photo-capture landing page and none of the editor or catalog work. The real
+workspace had moved to `three-combined-initial` — scanner, editor, catalog
+and feed merged together — so the two restyle commits were stranded on a
+branch nobody was building from.
+
+This merge brings them across. **The combined branch is the base of truth;
+only the visual work was taken from `main`.** No editor, catalog, scanner or
+schema behaviour was changed by this pass.
+
+**Applied unchanged from `main`:** `floorPlan.ts` (dark ground, non-square
+viewBox, `planAspect`), `PostCard`, `FeedView`, `FilterPanel`, `PlansShell`,
+`ShareComposer`, `SimilarRooms`, `CommentThread`, `layout.tsx` (the three
+root fonts), and the `feed` / `p` / `share` / `u` pages. Thirteen files, no
+conflicts — the social layer had not been touched on this branch since the
+merge base, so v4 and v5 applied exactly as written.
+
+**`globals.css` merged cleanly:** main's `:root` palette wholesale, plus this
+branch's `button:not(:disabled) { cursor: pointer }` rule, which main never
+had. Nothing of the old light drafting palette survives.
+
+**`src/app/page.tsx` was rewritten rather than taken from either side.** The
+two versions were different products: main's is the photo-capture flow
+(`/api/photos` polling, `generateLayout`, a QR to `/capture?session=`), and
+this branch's is LiDAR-only (a `roomscanner://scan?session=` deep link and a
+poll on `/api/layout`). The LiDAR behaviour is kept exactly as it was,
+including the gate that stops an idle tab polling forever; main's visual
+language is what was ported onto it — the pill nav, the amber-wash hero, the
+QR panel, the recent-plans rail and the how-it-works block.
+
+Two deliberate departures from a literal port, both because the page is now
+describing a different capture path:
+
+- **The nav carries `/rooms`**, the editor's scanned-room index. It does not
+  exist on `main`, so main's nav had nowhere to link it.
+- **The "Scan" and "Arrange" copy was rewritten.** Main's said "photograph
+  the room from a few angles", which is the Gemini path. It now describes
+  walking the room with the LiDAR app, and mentions swapping in catalog
+  products, which is what the editor actually does here.
+
+**The rail came across with the restyle.** It is display-only, reads
+`/api/feed`, and renders nothing at all if that call fails, so it cannot
+affect the capture flow.
+
+**Verified:** `npx tsc --noEmit` clean, `npx eslint` clean, `npx next build`
+passes. The two stale-doc items called out before this merge
+(`SCANNER_CONTRACT.md`'s category table, and `walls` / `label` being
+undocumented) are **still open** — they predate this merge and were left
+alone deliberately, since this pass was scoped to the restyle.

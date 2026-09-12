@@ -149,7 +149,7 @@ export function CommentThread({ postId, initialCount }: { postId: string; initia
         <button
           type="submit"
           disabled={busy || !body.trim()}
-          className="tb shrink-0 rounded-[2px] bg-[var(--ink)] px-4 py-2 text-[12px] uppercase tracking-wider text-white disabled:opacity-40"
+          className="tb shrink-0 rounded-full bg-[var(--amber)] px-5 py-2.5 text-[12px] uppercase tracking-wider text-[var(--on-amber)] transition-transform hover:-translate-y-px active:translate-y-0 disabled:translate-y-0 disabled:opacity-40"
         >
           {busy ? "Posting…" : "Post"}
         </button>

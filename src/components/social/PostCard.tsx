@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Post } from "@/lib/postMetadata";
+import { planAspect } from "@/lib/floorPlan";
 
 /**
  * One plan in the grid, drawn as a sheet from a drawing set: the floor plan
@@ -33,19 +34,23 @@ export function PostCard({
   const budget = formatBudget(post.total_budget_cents);
 
   return (
-    <article className="flex flex-col">
+    <article className="mb-4 flex break-inside-avoid flex-col sm:mb-5">
       <Link
         href={`/p/${post.id}`}
-        className="sheet block overflow-hidden rounded-[2px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blueline)]"
+        className="sheet block overflow-hidden rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blueline)]"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={post.render_url ?? post.thumbnail_url}
           alt={`Floor plan of a ${post.room_type}, ${formatArea(post.area_m2)}`}
-          className="aspect-square w-full bg-[var(--paper)] object-cover"
+          // The ratio is set here as well as inside the SVG so the column
+          // reserves the right height before the image arrives. Without it
+          // every card jumps as the grid settles.
+          style={{ aspectRatio: planAspect(post.width_m, post.length_m) }}
+          className="w-full bg-[var(--ground)] object-cover"
           loading="lazy"
         />
-        <div className="border-t border-[var(--rule)] px-3 py-2">
+        <div className="border-t border-[var(--line-soft)] px-3.5 py-2.5">
           <div className="tb flex items-baseline justify-between gap-2 text-[11px] text-[var(--pencil)]">
             <span className="uppercase tracking-wider text-[var(--blueline)]">
               {post.room_type}
@@ -86,9 +91,9 @@ export function PostCard({
           aria-pressed={liked}
           aria-label={liked ? "Remove your stamp" : "Stamp this plan"}
           title={liked ? "Remove your stamp" : "Stamp this plan"}
-          className={`tb shrink-0 rounded-[2px] border px-2 py-1 text-[11px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--stamp)] ${
+          className={`tb shrink-0 rounded-full border px-2.5 py-1 text-[11px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--stamp)] ${
             liked
-              ? "border-[var(--stamp)] bg-[var(--stamp)] text-white"
+              ? "border-[var(--stamp)] bg-[var(--stamp)] text-[var(--on-amber)]"
               : "border-[var(--rule)] bg-[var(--sheet)] text-[var(--pencil)] hover:border-[var(--stamp)] hover:text-[var(--stamp)]"
           }`}
         >

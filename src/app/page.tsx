@@ -1,10 +1,20 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
-import { PlansShell } from "@/components/social/PlansShell";
+
+/** Just enough of a post to draw a rail card. */
+type RailPost = {
+  id: string;
+  thumbnail_url: string;
+  render_url: string | null;
+  author_handle: string;
+  area_m2: number;
+  room_type: string;
+  caption: string | null;
+};
 
 /**
  * The capture session id, as an external store.
@@ -28,11 +38,17 @@ function getServerSessionId(): string | null {
   return null;
 }
 
+const navLink =
+  "rounded-full px-3.5 py-2 text-sm text-[var(--fg-2)] transition-colors hover:bg-[var(--line-soft)] hover:text-[var(--fg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--amber)]";
+
 export default function Home() {
   const router = useRouter();
   // LiDAR is the only capture path now, so there's nothing left to pick —
-  // this just gates the hero screen before showing the QR.
+  // this gates the QR, and with it the polling, behind an explicit intent to
+  // scan. Without the gate every idle tab would poll /api/layout forever.
   const [scanning, setScanning] = useState(false);
+  const [rail, setRail] = useState<RailPost[]>([]);
+  const railRef = useRef<HTMLDivElement>(null);
 
   // Same lazy-external-store pattern as the rest of this app uses for
   // client-only ids — a UUID picked during SSR would never match the one
@@ -67,68 +83,302 @@ export default function Home() {
     };
   }, [scanning, sessionId, router]);
 
+  // Recently published plans, for the rail. Display only: if the feed is
+  // unreachable the section simply does not render, and nothing else on
+  // this page depends on it.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/feed?tab=all")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setRail((data.posts ?? []).slice(0, 14));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function scrollRail(direction: 1 | -1) {
+    railRef.current?.scrollBy({ left: direction * 340, behavior: "smooth" });
+  }
+
   const lidarDeepLink = `roomscanner://scan?session=${sessionId}`;
 
   return (
-    <PlansShell
-      action={
-        <div className="flex items-center gap-4">
-          <Link href="/rooms" className="tb text-[12px] uppercase tracking-wider text-[var(--blueline)]">
-            Scanned rooms
+    <div className="flex min-h-full flex-1 flex-col">
+      {/* ── Nav ─────────────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-40 px-3 pt-3 sm:px-5">
+        <div className="mx-auto flex max-w-6xl items-center gap-3 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--ground)_78%,transparent)] py-2 pl-5 pr-2 shadow-[var(--shadow)] backdrop-blur-xl">
+          <Link href="/" className="flex flex-shrink-0 items-center gap-2.5 rounded-full">
+            <svg viewBox="0 0 20 20" aria-hidden="true" className="h-[19px] w-[19px]">
+              <rect x="1.4" y="1.4" width="17.2" height="17.2" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M1.4 12.6h5.2v6" fill="none" stroke="currentColor" strokeWidth="1.5" opacity=".45" />
+              <circle cx="13.6" cy="7" r="2.6" fill="var(--amber)" />
+            </svg>
+            <span className="display hidden text-[17px] font-semibold sm:block">Room Scanner</span>
           </Link>
-          <Link href="/feed" className="tb text-[12px] uppercase tracking-wider text-[var(--blueline)]">
-            View the feed →
-          </Link>
-        </div>
-      }
-    >
-      {!scanning ? (
-        <div className="mx-auto flex max-w-lg flex-col items-center py-16 text-center">
-          <h1 className="text-3xl font-semibold tracking-tight">Plans</h1>
-          <p className="tb mt-3 max-w-sm text-[13px] text-[var(--pencil)]">
-            Measure a real room, then see what everyone else did with theirs.
-          </p>
-          <button
-            type="button"
+          <nav className="ml-auto flex items-center gap-0.5">
+            <Link href="/" className={`${navLink} bg-[var(--raised)] text-[var(--fg)]`} aria-current="page">
+              Home
+            </Link>
+            <Link href="/rooms" className={navLink}>
+              Rooms
+            </Link>
+            <Link href="/feed" className={navLink}>
+              Browse
+            </Link>
+          </nav>
+          <a
+            href="#scan"
             onClick={() => setScanning(true)}
-            className="tb mt-8 rounded-[2px] bg-[var(--ink)] px-6 py-3 text-[13px] uppercase tracking-wider text-white"
+            className="hidden flex-shrink-0 rounded-full bg-[var(--amber)] px-5 py-2.5 text-sm font-semibold text-[var(--on-amber)] transition-transform hover:-translate-y-px active:translate-y-0 sm:block"
           >
-            Scan a room
-          </button>
-          <Link href="/feed" className="tb mt-4 text-[12px] text-[var(--blueline)] underline underline-offset-4">
-            Or browse plans
-          </Link>
+            Scan my room
+          </a>
         </div>
-      ) : (
-        <div className="mx-auto max-w-lg">
-          <h1 className="text-xl font-semibold tracking-tight">Scan a room</h1>
-          <p className="tb mt-1 text-[12px] text-[var(--pencil)]">
-            Measure it, then share it to Plans when you&apos;re happy with it.
+      </header>
+
+      {/* ── Hero ────────────────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden px-5 pb-16 pt-16 sm:px-8 sm:pb-24 sm:pt-28">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 -top-40 h-[520px]"
+          style={{
+            background:
+              "radial-gradient(46% 60% at 22% 34%, rgb(233 179 106 / 0.20), transparent 62%), radial-gradient(38% 52% at 76% 22%, rgb(233 179 106 / 0.13), transparent 64%)",
+          }}
+        />
+        <div className="relative mx-auto max-w-6xl">
+          <span className="tb text-[11px] uppercase tracking-[0.18em] text-[var(--fg-3)]">
+            LiDAR room capture
+          </span>
+          <h1 className="display mt-5 max-w-[19ch] text-[clamp(2.6rem,7vw,5.6rem)]">
+            Every room here was measured, not{" "}
+            <span className="text-[var(--amber)]">imagined</span>.
+          </h1>
+          <p className="mt-6 max-w-[52ch] text-[clamp(1rem,1.5vw,1.18rem)] leading-relaxed text-[var(--fg-2)]">
+            Scan the room you actually live in, then find what other people did with one the same
+            size. Down to the centimetre, because the floor plan comes off the sensor and not out of
+            a mood board.
           </p>
-
-          <div className="mt-6">
-            <p className="tb mb-3 text-[12px] text-[var(--pencil)]">
-              Scan this QR code with your phone&apos;s camera — it opens the RoomScanner app straight into a scan
-              for this session.
-            </p>
-
-            <div className="sheet flex w-fit items-center justify-center rounded-[2px] p-4">
-              <QRCodeSVG value={lidarDeepLink} size={208} />
-            </div>
-
-            <p className="tb mt-3 break-all text-[11px] text-[var(--pencil)]">session: {sessionId}</p>
-            <button
-              type="button"
-              onClick={() => setScanning(false)}
-              className="tb mt-2 text-[12px] text-[var(--blueline)] underline underline-offset-4"
+          <div className="mt-9 flex flex-wrap gap-3">
+            <a
+              href="#scan"
+              onClick={() => setScanning(true)}
+              className="inline-flex items-center gap-2.5 rounded-full bg-[var(--amber)] px-7 py-3.5 font-semibold text-[var(--on-amber)] transition-transform hover:-translate-y-0.5 active:translate-y-0"
             >
-              Back
-            </button>
-
-            <p className="tb mt-4 text-[12px] text-[var(--pencil)]">Waiting for the scan to finish on your phone…</p>
+              Scan my room
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M2 8h12M9 3l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </a>
+            <Link
+              href="/feed"
+              className="inline-flex items-center rounded-full border border-[var(--line)] px-7 py-3.5 font-semibold text-[var(--fg)] transition-colors hover:border-[var(--fg-3)] hover:bg-[var(--raised)]"
+            >
+              Browse designs
+            </Link>
           </div>
         </div>
+      </section>
+
+      {/* ── Scan handoff. The QR is the product: this browser has no depth
+           sensor, so the capture happens in the iOS app. ─────────────────── */}
+      <section id="scan" className="scroll-mt-24 px-5 pb-20 sm:px-8">
+        <div className="mx-auto grid max-w-6xl gap-8 rounded-3xl border border-[var(--line)] bg-[var(--raised)] p-6 sm:p-10 md:grid-cols-[auto_minmax(0,1fr)] md:gap-12">
+          <div className="flex flex-col items-center gap-4">
+            <div className="rounded-2xl bg-[#FBF7F1] p-4 shadow-[var(--shadow)]">
+              {scanning && sessionId ? (
+                <QRCodeSVG value={lidarDeepLink} size={216} bgColor="#FBF7F1" fgColor="#141110" />
+              ) : (
+                <div className="flex h-[216px] w-[216px] items-center justify-center px-6 text-center">
+                  <span className="tb text-[12px] leading-relaxed text-[#877c6d]">
+                    {sessionId ? "Start a scan to reveal the code" : "Generating session…"}
+                  </span>
+                </div>
+              )}
+            </div>
+            {scanning && sessionId && (
+              <p className="tb max-w-[240px] break-all text-center text-[10.5px] leading-relaxed text-[var(--fg-3)]">
+                {sessionId}
+              </p>
+            )}
+          </div>
+
+          <div className="flex min-w-0 flex-col">
+            <span className="tb text-[11px] uppercase tracking-[0.18em] text-[var(--amber)]">
+              Step one
+            </span>
+            <h2 className="display mt-3 text-[clamp(1.6rem,3vw,2.4rem)]">
+              Point your phone at this code.
+            </h2>
+            <p className="mt-4 max-w-[46ch] leading-relaxed text-[var(--fg-2)]">
+              Scanning it with your phone&apos;s camera opens the RoomScanner app straight into a
+              capture for this session. Walk the room once; the measured layout lands back here on
+              its own. Keep this tab open.
+            </p>
+
+            {!scanning ? (
+              <button
+                type="button"
+                onClick={() => setScanning(true)}
+                className="mt-7 inline-flex w-fit items-center gap-2.5 rounded-full bg-[var(--amber)] px-7 py-3.5 font-semibold text-[var(--on-amber)] transition-transform hover:-translate-y-0.5 active:translate-y-0"
+              >
+                Start a scan
+              </button>
+            ) : (
+              <>
+                <div className="mt-7 flex items-center gap-3 rounded-2xl border border-dashed border-[var(--line)] px-5 py-6 text-sm text-[var(--fg-3)]">
+                  <span className="relative flex h-2 w-2 flex-shrink-0">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--amber)] opacity-60" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--amber)]" />
+                  </span>
+                  Waiting for the scan to finish on your phone.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setScanning(false)}
+                  className="tb mt-4 w-fit text-[12px] text-[var(--amber)] underline underline-offset-4"
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Scanned this week ───────────────────────────────────────────── */}
+      {rail.length > 0 && (
+        <section className="pb-20">
+          <div className="mx-auto max-w-6xl px-5 sm:px-8">
+            <div className="flex flex-wrap items-baseline gap-4 pb-5">
+              <h2 className="display text-[clamp(1.3rem,2.2vw,1.75rem)]">Scanned this week</h2>
+              <span className="ml-auto hidden text-sm text-[var(--fg-3)] sm:block">
+                Plans are drawn live from each capture.
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => scrollRail(-1)}
+                  aria-label="Scroll left"
+                  className="grid h-9 w-9 place-items-center rounded-full border border-[var(--line)] text-[var(--fg-2)] transition-colors hover:border-[var(--fg-3)] hover:text-[var(--fg)]"
+                >
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollRail(1)}
+                  aria-label="Scroll right"
+                  className="grid h-9 w-9 place-items-center rounded-full border border-[var(--line)] text-[var(--fg-2)] transition-colors hover:border-[var(--fg-3)] hover:text-[var(--fg)]"
+                >
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mx-auto max-w-6xl px-5 sm:px-8">
+            <div
+              ref={railRef}
+              className="rail-scroll flex gap-4 overflow-x-auto pb-2"
+              tabIndex={0}
+              role="region"
+              aria-label="Recently scanned rooms, scrollable"
+            >
+              {rail.map((post) => (
+                <Link
+                  key={post.id}
+                  href={`/p/${post.id}`}
+                  className="group w-[190px] flex-shrink-0 overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--raised)] transition-all duration-300 hover:-translate-y-1.5 hover:border-[var(--amber-line)]"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={post.render_url ?? post.thumbnail_url}
+                    alt={`Floor plan of a ${post.room_type}`}
+                    className="aspect-square w-full bg-[var(--ground)] object-contain"
+                    loading="lazy"
+                  />
+                  <div className="border-t border-[var(--line-soft)] px-3 py-2.5">
+                    <p className="truncate text-[13px] text-[var(--fg)]">
+                      {post.caption || post.room_type}
+                    </p>
+                    <p className="tb mt-1 text-[11px] text-[var(--fg-3)]">
+                      {post.author_handle}, {Math.round(post.area_m2)} m²
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
       )}
-    </PlansShell>
+
+      {/* ── How it works ────────────────────────────────────────────────── */}
+      <section className="px-5 pb-24 sm:px-8">
+        <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] md:gap-20">
+          <div className="md:sticky md:top-28 md:self-start">
+            <span className="tb text-[11px] uppercase tracking-[0.18em] text-[var(--fg-3)]">
+              How it works
+            </span>
+            <h2 className="display mt-4 text-[clamp(1.9rem,4vw,3.2rem)]">
+              From your floor to the feed.
+            </h2>
+            <p className="mt-5 max-w-[34ch] text-[var(--fg-2)]">
+              No accounts, no setup. Walk the room once and the geometry is yours to rearrange.
+            </p>
+          </div>
+
+          <div>
+            {[
+              {
+                title: "Scan",
+                body: "Walk the room once with the RoomScanner app. LiDAR reads the walls where they actually are — bays, angled corners and partitions included — along with openings and anything tall enough to bump into.",
+                metric: "Around 40 seconds for a single room.",
+              },
+              {
+                title: "Arrange",
+                body: "Drag furniture across the real footprint, or swap in a product you can actually buy and watch the total move. Nothing snaps to a fake grid, so if the wardrobe will not clear the door swing, you find out here instead of in the shop.",
+                metric: "Every position stored in metres.",
+              },
+              {
+                title: "Share",
+                body: "Publish the layout with a caption. It lands in a feed people filter by room size, so a 19 m² studio is compared against other 19 m² studios.",
+                metric: "Filtered by dimension, not by vibe.",
+              },
+            ].map((step, i) => (
+              <article
+                key={step.title}
+                className={`border-t border-[var(--line)] py-8 ${i === 2 ? "border-b" : ""}`}
+              >
+                <h3 className="display text-[1.45rem] font-semibold">{step.title}</h3>
+                <p className="mt-2.5 max-w-[46ch] leading-relaxed text-[var(--fg-2)]">{step.body}</p>
+                <p className="tb mt-3.5 text-[12px] text-[var(--amber)]">{step.metric}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Footer ──────────────────────────────────────────────────────── */}
+      <footer className="mt-auto border-t border-[var(--line)] px-5 py-10 sm:px-8">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-start gap-x-12 gap-y-6">
+          <Link href="/feed" className="text-sm text-[var(--fg-2)] hover:text-[var(--amber)]">
+            Browse designs
+          </Link>
+          <Link href="/rooms" className="text-sm text-[var(--fg-2)] hover:text-[var(--amber)]">
+            Scanned rooms
+          </Link>
+          <p className="ml-auto max-w-[32ch] text-right text-[13px] text-[var(--fg-3)]">
+            A scan stays in your capture session until you publish a layout.
+          </p>
+        </div>
+      </footer>
+    </div>
   );
 }

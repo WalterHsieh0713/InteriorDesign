@@ -1,28 +1,88 @@
 @import "tailwindcss";
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Room Scanner design tokens
+
+   One warm, dark visual world for the whole product: the scanner, the room
+   editor and the feed. The reference board this came from is almost entirely
+   evening interiors, hidden LED and lamp glow against wood and stone, so the
+   ground is a warm off-black and the single accent is lamp amber.
+
+   Amber rather than terracotta on purpose. Terracotta is itself a furniture
+   colour, so it competes with the rooms it is meant to frame.
+
+   This commits to one theme rather than shipping a light mode as well. The
+   light version was noticeably weaker and the product is a night-time,
+   lamp-lit thing, so the choice is deliberate and every colour below is
+   painted explicitly rather than inherited from the browser.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+
+  --ground: #141110;
+  --ground-2: #1a1613;
+  --raised: #221d18;
+  --raised-2: #2a241d;
+  --line: #342c24;
+  --line-soft: #241e19;
+
+  --fg: #f3ede4;
+  --fg-2: #b5a996;
+  --fg-3: #877c6d;
+
+  --amber: #e9b36a;
+  --amber-2: #c98a3e;
+  --amber-wash: rgb(233 179 106 / 0.14);
+  --amber-line: rgb(233 179 106 / 0.3);
+  --on-amber: #141110;
+
+  --danger: #e0765c;
+
+  --shadow: 0 24px 60px -28px rgb(0 0 0 / 0.85);
+  --shadow-lift: 0 34px 70px -24px rgb(0 0 0 / 0.9);
+
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Kept because Tailwind's generated theme references them. */
+  --background: var(--ground);
+  --foreground: var(--fg);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-mono-rs);
+  --font-display: var(--font-display);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--ground);
+  color: var(--fg);
+  font-family: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--amber);
+  color: var(--on-amber);
+}
+
+/* Measurements, counts and labels. Rooms are measured, so digits line up. */
+.tb,
+.plans .tb {
+  font-family: var(--font-mono-rs), ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* Titles. Tracked in tight, because a grotesk at display size needs it. */
+.display {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.04;
+  text-wrap: balance;
 }
 
 /* Native <button> defaults to the arrow cursor in most browsers - only <a>
@@ -34,42 +94,52 @@ button:not(:disabled) {
 }
 
 /* --- Social layer ("plans") ------------------------------------------------
-   Scoped to .plans so the feed's drafting palette can't leak into the
-   scanner and room views, which have their own look. The subject here is
-   architectural floor plans, so the vocabulary is drafting paper, blueline
-   accents, and a red approval stamp. */
+   Still scoped to .plans so nothing leaks, but the palette is now the same
+   one the rest of the app uses, which is the point of this pass.
+
+   The legacy variable names below are aliases. Every social component was
+   written against --paper / --sheet / --ink / --pencil / --blueline /
+   --stamp / --rule, so remapping them here restyles the entire feed without
+   touching a single component. The names now describe where a colour is
+   used rather than what it looks like: --blueline is the accent, and the
+   accent is amber. */
 .plans {
-  --paper: #eef0ea;
-  --sheet: #ffffff;
-  --ink: #12203a;
-  --pencil: #7b8494;
-  --blueline: #3d5a99;
-  --stamp: #c8402f;
-  --rule: #d7dad2;
+  --paper: var(--ground);
+  --sheet: var(--raised);
+  --ink: var(--fg);
+  --pencil: var(--fg-2);
+  --blueline: var(--amber);
+  --stamp: var(--amber);
+  --rule: var(--line);
 
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  background: var(--ground);
+  color: var(--fg);
+  font-family: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
 }
 
-/* Title-block voice: dimensions, areas, counts, labels. */
-.plans .tb {
-  font-family: var(--font-plex-mono), ui-monospace, SFMono-Regular, monospace;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
+.plans h1,
+.plans h2,
+.plans h3 {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.025em;
 }
 
-/* A sheet of paper on the drafting table. */
+/* A card in the grid. Was a sheet of drafting paper; now a lit surface. */
 .plans .sheet {
-  background: var(--sheet);
-  border: 1px solid var(--rule);
-  transition: transform 160ms ease, box-shadow 160ms ease;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  transition:
+    transform 320ms var(--ease),
+    box-shadow 380ms var(--ease),
+    border-color 320ms ease;
 }
 
 @media (hover: hover) {
   .plans a.sheet:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 22px -12px rgb(18 32 58 / 0.45);
+    transform: translateY(-4px);
+    border-color: var(--amber-line);
+    box-shadow: var(--shadow-lift);
   }
 }
 
@@ -81,10 +151,34 @@ button:not(:disabled) {
   display: none;
 }
 
+/* Horizontal rails: scrollable by drag, wheel, arrow buttons or keyboard.
+   The scrollbar is hidden because the arrows and the snap points already
+   say the rail moves. */
+.rail-scroll {
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.rail-scroll::-webkit-scrollbar {
+  display: none;
+}
+.rail-scroll > * {
+  scroll-snap-align: start;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .plans .sheet,
   .plans a.sheet:hover {
     transition: none;
     transform: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -247,19 +247,28 @@ export function FeedView() {
       </div>
 
       {error && (
-        <p className="mb-4 rounded-[2px] border border-[var(--stamp)] bg-white px-3 py-2 text-sm text-[var(--stamp)]">
+        <p className="mb-4 rounded-xl border border-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_12%,transparent)] px-4 py-3 text-sm text-[var(--danger)]">
           {error}
         </p>
       )}
 
       {loading ? (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-6 md:grid-cols-3 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="sheet aspect-square animate-pulse rounded-[2px]" />
+        <div className="columns-2 gap-4 sm:columns-3 sm:gap-5 lg:columns-4 xl:columns-5">
+          {/* Uneven on purpose: a skeleton of equal squares promises a grid
+              the real feed does not deliver. */}
+          {[76, 108, 62, 94, 118, 70, 100, 84, 66, 112].map((h, i) => (
+            <div
+              key={i}
+              style={{ height: `${h * 2}px` }}
+              className="sheet mb-4 animate-pulse break-inside-avoid rounded-2xl sm:mb-5"
+            />
           ))}
         </div>
       ) : posts.length > 0 ? (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-6 md:grid-cols-3 lg:grid-cols-4">
+        // Masonry by CSS columns. Each card keeps its room's real
+        // proportion, so the ragged edge of this grid is made of actual
+        // measurements rather than a decorative stagger.
+        <div className="columns-2 gap-4 sm:columns-3 sm:gap-5 lg:columns-4 xl:columns-5">
           {posts.map((post) => (
             <PostCard
               key={post.id}
@@ -270,7 +279,7 @@ export function FeedView() {
           ))}
         </div>
       ) : (
-        <div className="sheet rounded-[2px] px-6 py-16 text-center">
+        <div className="sheet rounded-2xl px-6 py-16 text-center">
           <p className="text-sm">
             {filtersActive
               ? "No plans match these filters."
@@ -296,7 +305,7 @@ export function FeedView() {
             type="button"
             onClick={loadMore}
             disabled={loadingMore}
-            className="tb rounded-[2px] border border-[var(--ink)] px-5 py-2 text-[12px] uppercase tracking-wider disabled:opacity-40"
+            className="tb rounded-full border border-[var(--line)] bg-[var(--raised)] px-6 py-2.5 text-[12px] uppercase tracking-wider transition-colors hover:border-[var(--amber-line)] hover:text-[var(--amber)] disabled:opacity-40"
           >
             {loadingMore ? "Loading…" : "Load more"}
           </button>
