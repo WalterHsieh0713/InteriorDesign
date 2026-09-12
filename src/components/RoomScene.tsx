@@ -22,8 +22,14 @@ import ShoppingList from "./ShoppingList";
 import WallFeatures from "./WallFeatures";
 import MirrorMesh from "./MirrorMesh";
 import RoomPanel from "./RoomPanel";
-import { getTexture, type TextureKind } from "./textures";
-import { prepareCameras, bakePlaneTexture, type PreparedCamera } from "./projectiveTexture";
+import { getTexture, getContactShadowTexture, type TextureKind } from "./textures";
+import {
+  prepareCameras,
+  dominantPlaneColor,
+  prepareOccluders,
+  rotateY,
+  type PreparedCamera,
+} from "./projectiveTexture";
 
 // Plausible real-furniture tones, used only when we have no sampled color
 // for an object. The previous palette was a categorical data-viz set — lime
@@ -46,6 +52,26 @@ const CATEGORY_COLORS: Record<string, string> = {
   mirror: "#cfd6d8",
   plant: "#4f7942",
   rug: "#9a938a",
+  refrigerator: "#d2d5d8",
+  oven: "#3f4246",
+  stove: "#4a4d51",
+  dishwasher: "#c8ccd0",
+  washerDryer: "#dcdfe2",
+  sink: "#c3c9cd",
+  toilet: "#eef1f2",
+  bathtub: "#eceff0",
+  fireplace: "#6e6660",
+  stairs: "#a49a8e",
+  keyboard: "#2e3134",
+  speaker: "#3a3d41",
+  clock: "#e6e2d8",
+  artwork: "#8a7f72",
+  thermostat: "#f0f2f3",
+  smokeAlarm: "#f2f3f4",
+  outlet: "#f4f2ee",
+  lightSwitch: "#f4f2ee",
+  vent: "#b8bcbf",
+  books: "#8a5b46",
   door: "#7a5638",
   window: "#aecbd8",
   other: "#b0aca6",
@@ -88,6 +114,61 @@ class EnvironmentBoundary extends Component<{ children: ReactNode }, { failed: b
   render() {
     return this.state.failed ? null : this.props.children;
   }
+}
+
+/// Walks the wall segments into a single closed outline so the floor can be
+/// cut to the room's true shape instead of overhanging as a rectangle.
+///
+/// Greedy nearest-endpoint chaining rather than anything cleverer: scanned
+/// walls are a loop in practice but rarely a *tidy* one — they overshoot at
+/// corners, and RoomPlan gives no ordering or adjacency. Walking to whichever
+/// unused endpoint is nearest reconstructs a sane perimeter for rectangles and
+/// L-shapes alike, and degrades to "slightly wrong polygon" rather than
+/// throwing when a scan is messy.
+function wallOutline(walls: NonNullable<RoomLayout["walls"]>): THREE.Vector2[] | null {
+  if (walls.length < 3) return null;
+
+  // Each wall's footprint is the line its width traces along the floor.
+  const segments = walls.map((w) => {
+    const half = w.dimensions[0] / 2;
+    const dir = rotateY(new THREE.Vector3(1, 0, 0), w.rotationY);
+    const cx = w.position[0];
+    const cz = w.position[2];
+    return {
+      a: new THREE.Vector2(cx - dir.x * half, cz - dir.z * half),
+      b: new THREE.Vector2(cx + dir.x * half, cz + dir.z * half),
+    };
+  });
+
+  const used = new Array(segments.length).fill(false);
+  used[0] = true;
+  const points = [segments[0].a, segments[0].b];
+
+  for (let step = 1; step < segments.length; step++) {
+    const tail = points[points.length - 1];
+    let bestIndex = -1;
+    let bestDistance = Infinity;
+    let bestFar: THREE.Vector2 | null = null;
+
+    for (let i = 0; i < segments.length; i++) {
+      if (used[i]) continue;
+      const { a, b } = segments[i];
+      const da = tail.distanceTo(a);
+      const db = tail.distanceTo(b);
+      const near = Math.min(da, db);
+      if (near < bestDistance) {
+        bestDistance = near;
+        bestIndex = i;
+        bestFar = da <= db ? b : a;
+      }
+    }
+
+    if (bestIndex < 0 || !bestFar) break;
+    used[bestIndex] = true;
+    points.push(bestFar);
+  }
+
+  return points.length >= 3 ? points : null;
 }
 
 /**
@@ -162,9 +243,23 @@ function nearestWallPoint(ray: THREE.Ray, room: RoomLayout["room"]): THREE.Vecto
   return best;
 }
 
-function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedCamera[] }) {
-  const { width, length, height } = room;
-  const wallColor = room.wallColor ?? "#d8d4cd";
+/// One continuous plane under the whole room — cut to the wall outline when
+/// the scan measured real walls, and the full bounding rectangle when it
+/// didn't. Either way it stays a single unbroken surface: a floor that's one
+/// piece can't tear or show a hole when furniture is dragged off the spot it
+/// was scanned in.
+function Floor({
+  room,
+  walls,
+  cameras,
+  occluders,
+}: {
+  room: RoomLayout["room"];
+  walls: RoomLayout["walls"];
+  cameras: PreparedCamera[];
+  occluders: ReturnType<typeof prepareOccluders>;
+}) {
+  const { width, length } = room;
   const floorColor = room.floorColor ?? "#9c968d";
   const material = room.floorMaterial ?? "other";
   const floorRoughness = FLOOR_ROUGHNESS[material] ?? 0.8;
@@ -175,117 +270,278 @@ function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedC
     () => getTexture(FLOOR_TEXTURE[material] ?? "carpet", Math.max(4, Math.round(Math.max(width, length) / 1.5))),
     [material, width, length]
   );
-  const wallMap = useMemo(() => getTexture("plaster", 6), []);
 
-  // Real captured photos projected onto each surface when the LiDAR path
-  // recorded camera poses (see projectiveTexture.ts). `cameras` is empty for
-  // every other session, in which case each of these is just null and the
-  // procedural map/flat color below renders exactly as it did before.
-  const floorPhoto = useMemo(
+  // One measured colour for the whole floor, read out of the photos rather
+  // than the photos themselves painted onto it — occlusion-aware sampling
+  // (walls and furniture block a camera's view of what's behind them) is
+  // what a flat colour can afford that a full photo bake couldn't: the old
+  // photo-projected floor could smear a chair's colour across the boards
+  // behind it, because nothing stopped a camera "seeing" through solid
+  // objects it was actually blocked by.
+  const surfaceColor = useMemo(
     () =>
-      bakePlaneTexture(
+      dominantPlaneColor(
         {
           center: new THREE.Vector3(0, 0, 0),
           xAxis: new THREE.Vector3(width, 0, 0),
           yAxis: new THREE.Vector3(0, 0, -length),
           normal: new THREE.Vector3(0, 1, 0),
           fallbackColor: floorColor,
-          resolution: 192,
         },
-        cameras
-      ),
-    [cameras, width, length, floorColor]
+        cameras,
+        occluders
+      ) ?? floorColor,
+    [cameras, occluders, width, length, floorColor]
   );
-  const backWallPhoto = useMemo(
+
+  // Shape space maps to the floor as (a, b) -> world (a, 0, -b), which is what
+  // the -90° X rotation below does. ShapeGeometry's own UVs are raw model
+  // coordinates, not 0..1, so they're recomputed here to match what
+  // planeGeometry would have produced, keeping the procedural grain aligned
+  // the same way on both the rectangular and the shaped floor.
+  const shaped = useMemo(() => {
+    const outline = walls?.length ? wallOutline(walls) : null;
+    if (!outline) return null;
+
+    const shape = new THREE.Shape();
+    shape.moveTo(outline[0].x, -outline[0].y);
+    for (const p of outline.slice(1)) shape.lineTo(p.x, -p.y);
+    shape.closePath();
+
+    const geometry = new THREE.ShapeGeometry(shape);
+    const position = geometry.attributes.position;
+    const uv = new Float32Array(position.count * 2);
+    for (let i = 0; i < position.count; i++) {
+      const a = position.getX(i);
+      const b = position.getY(i);
+      uv[i * 2] = a / width + 0.5;
+      uv[i * 2 + 1] = 0.5 + b / length;
+    }
+    geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+    return geometry;
+  }, [walls, width, length]);
+
+  const surface = (
+    <meshStandardMaterial
+      color={surfaceColor}
+      map={floorMap}
+      side={THREE.DoubleSide}
+      roughness={floorRoughness}
+    />
+  );
+
+  if (shaped) {
+    return (
+      <mesh geometry={shaped} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        {surface}
+      </mesh>
+    );
+  }
+
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <planeGeometry args={[width, length]} />
+      {surface}
+    </mesh>
+  );
+}
+
+/// Renders each individually measured wall where it actually stands, instead
+/// of forcing the room into a width×length box. Used in place of the
+/// four-wall fallback whenever the scan measured real wall segments — see
+/// `layout.walls` in roomLayoutSchema.ts.
+function MeasuredWalls({
+  walls,
+  wallColor,
+  ceilingColor,
+  height,
+  cameras,
+  occluders,
+}: {
+  walls: NonNullable<RoomLayout["walls"]>;
+  wallColor: string;
+  ceilingColor: string;
+  height: number;
+  cameras: PreparedCamera[];
+  occluders: ReturnType<typeof prepareOccluders>;
+}) {
+  const wallMap = useMemo(() => getTexture("plaster", 6), []);
+  const wallOpacity = cameras.length > 0 ? 0.95 : 0.88;
+
+  const baked = useMemo(
     () =>
-      bakePlaneTexture(
+      walls.map((w) => {
+        const [width, wallHeight] = w.dimensions;
+        const center = new THREE.Vector3(w.position[0], w.position[1], w.position[2]);
+
+        // A wall's stored yaw says which way it runs, not which of its two
+        // faces points into the room. Aim the normal at the room's center
+        // (the origin) so the bake samples the side the scanner stood on —
+        // and remember whether that required flipping, because the mesh has
+        // to be turned to match.
+        const normal = rotateY(new THREE.Vector3(0, 0, 1), w.rotationY);
+        const flipped = normal.dot(center.clone().negate()) < 0;
+        if (flipped) normal.negate();
+
+        return {
+          flipped,
+          // Sampled per wall, not per room: a red accent wall stays red while
+          // the others stay white, which one room-wide wallColor can't say.
+          color:
+            dominantPlaneColor(
+              {
+                center,
+                xAxis: rotateY(new THREE.Vector3(width, 0, 0), w.rotationY),
+                yAxis: new THREE.Vector3(0, wallHeight, 0),
+                normal,
+                fallbackColor: wallColor,
+              },
+              cameras,
+              occluders
+            ) ?? wallColor,
+        };
+      }),
+    [walls, wallColor, cameras, occluders]
+  );
+
+  return (
+    <group>
+      {/* A ceiling, so a pendant has something to hang from — measured walls
+          don't say where the ceiling plane is on their own, so this still
+          uses the room's overall height like the fallback box does. */}
+      <WallPanel axis="y" sign={1} limit={height} position={[0, height, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[40, 40]} />
+        <meshStandardMaterial
+          color={ceilingColor}
+          side={THREE.DoubleSide}
+          roughness={0.97}
+          transparent
+          opacity={wallOpacity}
+        />
+      </WallPanel>
+      {walls.map((w, i) => {
+        const { color, flipped } = baked[i];
+        return (
+          <mesh
+            key={i}
+            position={w.position}
+            // Turned so the front face points into the room, which is what
+            // makes backface culling work below.
+            rotation={[0, w.rotationY + (flipped ? Math.PI : 0), 0]}
+            receiveShadow
+          >
+            <planeGeometry args={[w.dimensions[0], w.dimensions[1]]} />
+            {/* Fully opaque and solved by culling rather than transparency:
+                each wall only renders its inward face, so orbiting outside
+                the room sees straight through the near walls to the interior
+                while standing inside still shows solid, properly-coloured
+                walls. */}
+            <meshStandardMaterial color={color} map={wallMap} side={THREE.FrontSide} roughness={0.95} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+function Walls({
+  room,
+  cameras,
+  occluders,
+}: {
+  room: RoomLayout["room"];
+  cameras: PreparedCamera[];
+  occluders: ReturnType<typeof prepareOccluders>;
+}) {
+  const { width, length, height } = room;
+  const wallColor = room.wallColor ?? "#d8d4cd";
+  const wallMap = useMemo(() => getTexture("plaster", 6), []);
+
+  // One measured colour per wall, occlusion-aware (see Floor above for why
+  // that beats painting the actual photos on): a camera standing in one
+  // corner shouldn't be able to "see" straight through the wall behind it
+  // to whatever else it's actually facing.
+  const backWallColor = useMemo(
+    () =>
+      dominantPlaneColor(
         {
           center: new THREE.Vector3(0, height / 2, -length / 2),
           xAxis: new THREE.Vector3(width, 0, 0),
           yAxis: new THREE.Vector3(0, height, 0),
           normal: new THREE.Vector3(0, 0, 1),
           fallbackColor: wallColor,
-          resolution: 192,
         },
-        cameras
-      ),
-    [cameras, width, height, length, wallColor]
+        cameras,
+        occluders
+      ) ?? wallColor,
+    [cameras, occluders, width, height, length, wallColor]
   );
-  const frontWallPhoto = useMemo(
+  const frontWallColor = useMemo(
     () =>
-      bakePlaneTexture(
+      dominantPlaneColor(
         {
           center: new THREE.Vector3(0, height / 2, length / 2),
           xAxis: new THREE.Vector3(-width, 0, 0),
           yAxis: new THREE.Vector3(0, height, 0),
           normal: new THREE.Vector3(0, 0, -1),
           fallbackColor: wallColor,
-          resolution: 192,
         },
-        cameras
-      ),
-    [cameras, width, height, length, wallColor]
+        cameras,
+        occluders
+      ) ?? wallColor,
+    [cameras, occluders, width, height, length, wallColor]
   );
-  const rightWallPhoto = useMemo(
+  const rightWallColor = useMemo(
     () =>
-      bakePlaneTexture(
+      dominantPlaneColor(
         {
           center: new THREE.Vector3(width / 2, height / 2, 0),
           xAxis: new THREE.Vector3(0, 0, length),
           yAxis: new THREE.Vector3(0, height, 0),
           normal: new THREE.Vector3(-1, 0, 0),
           fallbackColor: wallColor,
-          resolution: 192,
         },
-        cameras
-      ),
-    [cameras, width, height, length, wallColor]
+        cameras,
+        occluders
+      ) ?? wallColor,
+    [cameras, occluders, width, height, length, wallColor]
   );
-  const leftWallPhoto = useMemo(
+  const leftWallColor = useMemo(
     () =>
-      bakePlaneTexture(
+      dominantPlaneColor(
         {
           center: new THREE.Vector3(-width / 2, height / 2, 0),
           xAxis: new THREE.Vector3(0, 0, -length),
           yAxis: new THREE.Vector3(0, height, 0),
           normal: new THREE.Vector3(1, 0, 0),
           fallbackColor: wallColor,
-          resolution: 192,
         },
-        cameras
-      ),
-    [cameras, width, height, length, wallColor]
+        cameras,
+        occluders
+      ) ?? wallColor,
+    [cameras, occluders, width, height, length, wallColor]
   );
 
   // A flat guessed wall color stays translucent so you can still see inside
-  // while orbiting from outside — but a wall showing real captured pixels is
+  // while orbiting from outside — but a wall showing a real sampled color is
   // worth looking at directly, so it goes near-opaque instead.
   const wallOpacity = cameras.length > 0 ? 0.95 : 0.88;
 
-  function wallMaterial(photo: THREE.CanvasTexture | null) {
+  function wallMaterial(color: string) {
     return (
       <meshStandardMaterial
-        color={photo ? "#ffffff" : wallColor}
-        map={photo ?? wallMap}
+        color={color}
+        map={wallMap}
         side={THREE.DoubleSide}
         transparent
         opacity={wallOpacity}
-        roughness={photo ? 0.85 : 0.95}
+        roughness={0.95}
       />
     );
   }
 
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[width, length]} />
-        <meshStandardMaterial
-          color={floorPhoto ? "#ffffff" : floorColor}
-          map={floorPhoto ?? floorMap}
-          side={THREE.DoubleSide}
-          roughness={floorPhoto ? 0.75 : floorRoughness}
-        />
-      </mesh>
       {/* A ceiling, so a pendant has something to hang from. It hides while the
           camera is above it, which is nearly always — the same rule the walls
           follow, and the reason you can still see into the room at all. */}
@@ -307,19 +563,19 @@ function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedC
       </WallPanel>
       <WallPanel axis="z" sign={-1} limit={length / 2} position={[0, height / 2, -length / 2]}>
         <planeGeometry args={[width, height]} />
-        {wallMaterial(backWallPhoto)}
+        {wallMaterial(backWallColor)}
       </WallPanel>
       <WallPanel axis="z" sign={1} limit={length / 2} position={[0, height / 2, length / 2]} rotation={[0, Math.PI, 0]}>
         <planeGeometry args={[width, height]} />
-        {wallMaterial(frontWallPhoto)}
+        {wallMaterial(frontWallColor)}
       </WallPanel>
       <WallPanel axis="x" sign={1} limit={width / 2} position={[width / 2, height / 2, 0]} rotation={[0, -Math.PI / 2, 0]}>
         <planeGeometry args={[length, height]} />
-        {wallMaterial(rightWallPhoto)}
+        {wallMaterial(rightWallColor)}
       </WallPanel>
       <WallPanel axis="x" sign={-1} limit={width / 2} position={[-width / 2, height / 2, 0]} rotation={[0, Math.PI / 2, 0]}>
         <planeGeometry args={[length, height]} />
-        {wallMaterial(leftWallPhoto)}
+        {wallMaterial(leftWallColor)}
       </WallPanel>
     </group>
   );
@@ -375,14 +631,22 @@ function DraggableObject({
   isSelected,
   onDragStart,
   cameras,
+  occluders,
 }: {
   obj: RoomLayout["objects"][number];
   isDragging: boolean;
   isSelected: boolean;
   onDragStart: (id: string, y: number, e: ThreeEvent<PointerEvent>) => void;
   cameras: PreparedCamera[];
+  occluders: ReturnType<typeof prepareOccluders>;
 }) {
-  const [, h] = obj.dimensions;
+  const [w, h, d] = obj.dimensions;
+  // Only things actually resting on the floor get a contact shadow. A wall
+  // TV or a mirror would otherwise drop a blob on the floor beneath it,
+  // which reads as a bug rather than as grounding.
+  const shadowTexture = useMemo(() => getContactShadowTexture(), []);
+  const baseHeight = obj.position[1] - h / 2;
+  const showContactShadow = shadowTexture !== null && baseHeight < 0.3 && obj.category !== "rug";
   // A catalog-bound object renders as the real product's mesh; everything else
   // keeps the procedural shape, which is still the right answer for the user's
   // own scanned furniture and for any product with no model paired to it.
@@ -437,6 +701,7 @@ function DraggableObject({
               color={item.dominantHex}
               opacity={0.35}
               cameras={[]}
+              occluders={occluders}
               objectPosition={obj.position}
               objectRotationY={obj.rotationY}
             />
@@ -458,6 +723,7 @@ function DraggableObject({
           color={color}
           opacity={isDragging ? 0.6 : 1}
           cameras={cameras}
+          occluders={occluders}
           objectPosition={obj.position}
           objectRotationY={obj.rotationY}
         />
@@ -471,6 +737,24 @@ function DraggableObject({
       {obj.category === "lamp" && (
         <pointLight position={[0, h * 0.3, 0]} color={LAMP_LIGHT_COLOR} intensity={2.5} distance={4} decay={2} />
       )}
+      {showContactShadow && (
+        <mesh
+          // Sits just above the floor plane (world y ≈ 0) regardless of how
+          // high this object's own center is — hence subtracting its y.
+          position={[0, -obj.position[1] + 0.012, 0]}
+          rotation={[-Math.PI / 2, 0, 0]}
+        >
+          <planeGeometry args={[w * 1.35, d * 1.35]} />
+          <meshBasicMaterial
+            map={shadowTexture}
+            transparent
+            // Never write depth: the blob must not occlude the floor's own
+            // texture or another object's shadow overlapping it.
+            depthWrite={false}
+            opacity={0.75}
+          />
+        </mesh>
+      )}
       {hovered && (
         <Html position={[0, h / 2 + 0.15, 0]} center distanceFactor={8} style={{ pointerEvents: "none" }}>
           <div
@@ -483,7 +767,7 @@ function DraggableObject({
               whiteSpace: "nowrap",
             }}
           >
-            {obj.category}
+            {obj.label ?? obj.category}
           </div>
         </Html>
       )}
@@ -530,6 +814,77 @@ function Scene({
   }, [objects]);
   const { camera, raycaster, gl } = useThree();
   const lightColor = layout.room.lightColor ?? "#ffffff";
+
+  // Where the key light comes from. A fixed corner is wrong in every room
+  // that doesn't happen to have a window in that corner — and the layout
+  // already tells us where the real windows are (LiDAR measures them
+  // directly; Gemini infers them). Light the room from its actual largest
+  // window, aimed inward at the room's center, and only fall back to the
+  // arbitrary corner when a scan found no windows at all.
+  const keyLight = useMemo(() => {
+    const { width, length, height } = layout.room;
+    const reach = Math.max(width, length, height) * 1.4;
+
+    const windows = objects.filter((o) => o.category === "window");
+    const brightest = windows
+      .slice()
+      .sort((a, b) => b.dimensions[0] * b.dimensions[1] - a.dimensions[0] * a.dimensions[1])[0];
+
+    if (!brightest) {
+      return {
+        position: [width, height * 3, length] as [number, number, number],
+        intensity: 1.7,
+      };
+    }
+
+    // Push out along the horizontal direction from room center to the
+    // window, so the light sits outside that wall shining in. A window
+    // somehow at dead center has no meaningful outward direction — fall
+    // back to something arbitrary but stable rather than NaN.
+    const outward = new THREE.Vector3(brightest.position[0], 0, brightest.position[2]);
+    if (outward.lengthSq() < 1e-6) outward.set(0, 0, 1);
+    outward.normalize();
+
+    return {
+      // Slightly above the window itself: real daylight rakes downward into
+      // a room rather than arriving dead level.
+      position: [outward.x * reach, brightest.position[1] + height * 0.45, outward.z * reach] as [
+        number,
+        number,
+        number,
+      ],
+      intensity: 2.1,
+    };
+  }, [layout.room, objects]);
+
+  // Everything solid enough to stand between a camera and a surface, so the
+  // colour sampling can tell "this wall is grey" from "a grey cabinet is in
+  // front of this wall". Walls belong in here as much as furniture does —
+  // without them a camera standing in one corner samples colour straight
+  // *through* the wall behind it.
+  const occluders = useMemo(
+    () =>
+      prepareOccluders([
+        ...objects.map((o) => ({
+          position: o.position,
+          rotationY: o.rotationY,
+          dimensions: o.dimensions,
+        })),
+        ...(layout.walls ?? []).map((w) => ({
+          position: w.position,
+          rotationY: w.rotationY,
+          // RoomPlan reports walls as near-zero-thickness planes. Give them
+          // real depth so they block reliably instead of being a surface a
+          // ray can skim along the edge of.
+          dimensions: [w.dimensions[0], w.dimensions[1], Math.max(w.dimensions[2], 0.08)] as [
+            number,
+            number,
+            number,
+          ],
+        })),
+      ]),
+    [objects, layout.walls]
+  );
 
   const handleDragStart = useCallback(
     (id: string, y: number, e: ThreeEvent<PointerEvent>) => {
@@ -674,9 +1029,13 @@ function Scene({
       {/* Only the room's own daylight dims. Lamps, LED runs and a diffuser
           keep their output, which is the whole point of the switch. */}
       <ambientLight intensity={lightsOn ? 0.25 : 0.03} color={lightColor} />
+      {/* Key light — positioned from the room's real largest window when the
+          scan found one (see keyLight above), not a fixed corner. Its target
+          defaults to the origin, which is the room's center, so it always
+          rakes inward across the floor. */}
       <directionalLight
-        position={[layout.room.width, layout.room.height * 3, layout.room.length]}
-        intensity={lightsOn ? 1.7 : 0.08}
+        position={keyLight.position}
+        intensity={lightsOn ? keyLight.intensity : keyLight.intensity * 0.047}
         color={lightColor}
         castShadow
         shadow-mapSize={[1024, 1024]}
@@ -695,6 +1054,24 @@ function Scene({
         intensity={lightsOn ? 0.45 : 0.03}
         color={lightColor}
       />
+      {/* Windows don't just define the key light's direction, they're also
+          bright surfaces in their own right — without this, the wall a
+          window sits in reads as the darkest thing in the room. */}
+      {lightsOn &&
+        objects
+          .filter((o) => o.category === "window")
+          .map((w) => (
+            <pointLight
+              key={`window-${w.id}`}
+              // Pulled slightly inside the wall so the light is in the room
+              // rather than embedded in the wall geometry.
+              position={[w.position[0] * 0.85, w.position[1], w.position[2] * 0.85]}
+              color={lightColor}
+              intensity={0.7}
+              distance={Math.max(layout.room.width, layout.room.length)}
+              decay={2}
+            />
+          ))}
       {/* Clicking past every object clears the selection. It sits behind the
           furniture and only ever fires when nothing else swallowed the event. */}
       <mesh
@@ -705,7 +1082,19 @@ function Scene({
         <planeGeometry args={[layout.room.width * 4, layout.room.length * 4]} />
         <meshBasicMaterial visible={false} />
       </mesh>
-      <Walls room={layout.room} cameras={cameras} />
+      <Floor room={layout.room} walls={layout.walls} cameras={cameras} occluders={occluders} />
+      {layout.walls?.length ? (
+        <MeasuredWalls
+          walls={layout.walls}
+          wallColor={layout.room.wallColor ?? "#d8d4cd"}
+          ceilingColor={layout.room.ceilingColor ?? "#e8e6e2"}
+          height={layout.room.height}
+          cameras={cameras}
+          occluders={occluders}
+        />
+      ) : (
+        <Walls room={layout.room} cameras={cameras} occluders={occluders} />
+      )}
       <WallFeatures room={layout.room} />
       {/* A light strip has no body to drag — it follows an edge of the room or
           of a piece of furniture, so it is drawn from the room rather than
@@ -739,6 +1128,7 @@ function Scene({
           isSelected={selectedId === obj.id}
           onDragStart={handleDragStart}
           cameras={cameras}
+          occluders={occluders}
         />
       ))}
       <OrbitControls ref={controlsRef as never} enabled={!draggingId} makeDefault />

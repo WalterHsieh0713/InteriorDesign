@@ -124,6 +124,40 @@ export function getTexture(kind: TextureKind, repeat = 2): THREE.Texture | null 
   return instance;
 }
 
+let contactShadow: THREE.Texture | null | undefined;
+
+/** A soft radial blob used as a fake contact shadow under furniture.
+ *
+ * Deliberately not baked into the floor texture: this is parented to the
+ * object, so it slides along during a drag instead of staying behind where
+ * the object used to be. It's also far cheaper than a second shadow pass —
+ * this scene already dropped PCSS soft shadows for crashing mobile GPUs, so
+ * nothing here should be adding per-frame shadow work. */
+export function getContactShadowTexture(): THREE.Texture | null {
+  if (typeof document === "undefined") return null;
+
+  if (contactShadow === undefined) {
+    const size = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      contactShadow = null;
+      return null;
+    }
+    const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    gradient.addColorStop(0, "rgba(0,0,0,0.55)");
+    gradient.addColorStop(0.55, "rgba(0,0,0,0.22)");
+    gradient.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    contactShadow = new THREE.CanvasTexture(canvas);
+  }
+
+  return contactShadow ?? null;
+}
+
 export const CATEGORY_TEXTURE: Record<string, TextureKind> = {
   bed: "fabric",
   desk: "wood",
@@ -141,6 +175,26 @@ export const CATEGORY_TEXTURE: Record<string, TextureKind> = {
   mirror: "plaster",
   plant: "fabric",
   rug: "carpet",
+  refrigerator: "plaster",
+  oven: "plaster",
+  stove: "plaster",
+  dishwasher: "plaster",
+  washerDryer: "plaster",
+  sink: "tile",
+  toilet: "plaster",
+  bathtub: "tile",
+  fireplace: "tile",
+  stairs: "wood",
+  keyboard: "plaster",
+  speaker: "fabric",
+  clock: "plaster",
+  artwork: "fabric",
+  thermostat: "plaster",
+  smokeAlarm: "plaster",
+  outlet: "plaster",
+  lightSwitch: "plaster",
+  vent: "plaster",
+  books: "fabric",
   door: "wood",
   window: "plaster",
   other: "plaster",

@@ -16,7 +16,8 @@ export async function POST(req: NextRequest) {
   const ext = file.type === "image/png" ? "png" : "jpg";
   const path = `${session}/${crypto.randomUUID()}.${ext}`;
 
-  const { error } = await supabaseAdmin()
+  const supabase = supabaseAdmin();
+  const { error } = await supabase
     .storage.from(PHOTOS_BUCKET)
     .upload(path, file, { contentType: file.type || "image/jpeg" });
 
@@ -24,5 +25,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ path });
+  // The public URL goes back to the caller because the storage path is named
+  // with a UUID generated here — the LiDAR app can't derive it, and it needs
+  // exactly this URL to pair the photo with the camera pose that took it
+  // (see CameraFrameJSON in Models.swift on archive/swift-roomplan).
+  const { data: pub } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(path);
+
+  return NextResponse.json({ path, url: pub.publicUrl });
 }

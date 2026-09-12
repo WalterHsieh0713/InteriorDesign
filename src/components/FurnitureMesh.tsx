@@ -1,7 +1,12 @@
 import { createContext, useContext, useMemo } from "react";
 import * as THREE from "three";
 import { CATEGORY_TEXTURE, getTexture } from "./textures";
-import { bakePlaneTexture, rotateY, type PreparedCamera } from "./projectiveTexture";
+import {
+  dominantPlaneColor,
+  prepareOccluders,
+  rotateY,
+  type PreparedCamera,
+} from "./projectiveTexture";
 
 type Props = {
   category: string;
@@ -11,6 +16,9 @@ type Props = {
   /** Captured camera frames for this session, empty on the Gemini-photo web
    * path (no per-photo camera pose) — see projectiveTexture.ts. */
   cameras: PreparedCamera[];
+  /** Everything that can stand between a camera and this object's face. A
+   * chair pushed under a desk otherwise paints itself onto the desktop. */
+  occluders: ReturnType<typeof prepareOccluders>;
   objectPosition: [number, number, number];
   objectRotationY: number;
 };
@@ -20,11 +28,12 @@ type Props = {
 // through every Panel call.
 const DetailMap = createContext<THREE.Texture | null>(null);
 
-// The one real photo baked onto this object's single most-visible face (see
+// The colour measured off this object's most-visible face in the photos (see
 // faceGeometryFor below), shared the same way as DetailMap. Null whenever
-// there are no cameras, the category has no single flat face worth texturing
-// (a lamp, a plant), or no camera actually saw this object.
-const PhotoMap = createContext<THREE.CanvasTexture | null>(null);
+// there are no cameras, the category has no single flat face worth sampling
+// (a lamp, a plant), or no camera actually saw this object — in which case
+// the object keeps whichever colour colorize or the category palette gave it.
+const FaceColor = createContext<string | null>(null);
 
 function shade(hex: string, percent: number) {
   const num = parseInt(hex.replace("#", ""), 16);
@@ -53,24 +62,25 @@ function Panel({
   roughness?: number;
   metalness?: number;
   transparent?: boolean;
-  /** This is the panel that stands in for the object's single baked photo
-   * face (see faceGeometryFor) — only one Panel per object should set this. */
+  /** This is the panel standing in for the object's sampled face (see
+   * faceGeometryFor) — only one Panel per object should set this. */
   usePhoto?: boolean;
 }) {
   const detailMap = useContext(DetailMap);
-  const contextPhotoMap = useContext(PhotoMap);
-  const photoMap = usePhoto ? contextPhotoMap : null;
-  const map = photoMap ?? detailMap;
+  const sampledFace = useContext(FaceColor);
+  // A measured colour beats the palette guess, but it's still just a colour —
+  // the panel keeps its procedural grain rather than wearing a photo.
+  const resolved = usePhoto && sampledFace ? sampledFace : color;
   return (
     <mesh position={offset} castShadow receiveShadow>
       <boxGeometry args={size.map((v) => Math.max(v, 0.01)) as [number, number, number]} />
       <meshStandardMaterial
-        color={photoMap ? "#ffffff" : color}
-        map={map}
+        color={resolved}
+        map={detailMap}
         transparent={transparent || opacity < 1}
         opacity={opacity}
-        roughness={photoMap ? 0.85 : roughness}
-        metalness={photoMap ? 0.05 : metalness}
+        roughness={roughness}
+        metalness={metalness}
       />
     </mesh>
   );
@@ -129,16 +139,52 @@ function faceGeometryFor(
 ): { offset: THREE.Vector3; normal: THREE.Vector3; faceW: number; faceH: number } | null {
   const [w, h, d] = dimensions;
   switch (category) {
-    // Backrest-style categories: the flat panel already rendered at -Z.
+    // A chair's backrest is the top half of its bounding box and nothing
+    // else — below it is legs and open air. Sampling the whole box face
+    // therefore reads mostly the floor and table *behind* the chair, which is
+    // how a room of black chairs came out uniformly table-coloured. These
+    // rectangles match the panels FurnitureGeometry actually draws.
     case "chair":
+      return {
+        offset: new THREE.Vector3(0, h * 0.25, -d / 2),
+        normal: new THREE.Vector3(0, 0, -1),
+        faceW: w * 0.85,
+        faceH: h * 0.5,
+      };
     case "sofa":
+      return {
+        offset: new THREE.Vector3(0, h * 0.25, -d / 2),
+        normal: new THREE.Vector3(0, 0, -1),
+        faceW: w,
+        faceH: h * 0.5,
+      };
+    // These two genuinely are full-height flat backs.
     case "bed":
     case "shelf":
       return { offset: new THREE.Vector3(0, 0, -d / 2), normal: new THREE.Vector3(0, 0, -1), faceW: w, faceH: h };
-    // Screen/front-facing categories: the flat panel already rendered at +Z.
     case "tv":
+      return {
+        offset: new THREE.Vector3(0, h * 0.075, d / 2),
+        normal: new THREE.Vector3(0, 0, 1),
+        faceW: w,
+        faceH: h * 0.85,
+      };
     case "monitor":
+      return {
+        offset: new THREE.Vector3(0, h * 0.12, d / 2),
+        normal: new THREE.Vector3(0, 0, 1),
+        faceW: w,
+        faceH: h * 0.75,
+      };
+    // Front-facing categories whose front really is the whole box face.
     case "door":
+    case "refrigerator":
+    case "dishwasher":
+    case "washerDryer":
+    case "oven":
+    // Artwork most of all: a picture frame whose picture is a flat average
+    // colour is just a rectangle.
+    case "artwork":
       return { offset: new THREE.Vector3(0, 0, d / 2), normal: new THREE.Vector3(0, 0, 1), faceW: w, faceH: h };
     // Horizontal top surface.
     case "table":
@@ -150,8 +196,8 @@ function faceGeometryFor(
   }
 }
 
-function useFacePhotoTexture(props: Props): THREE.CanvasTexture | null {
-  const { category, dimensions, color, cameras, objectPosition, objectRotationY } = props;
+function useFaceColor(props: Props): string | null {
+  const { category, dimensions, color, cameras, occluders, objectPosition, objectRotationY } = props;
   const [ox, oy, oz] = objectPosition;
   const [w, h, d] = dimensions;
   return useMemo(() => {
@@ -168,8 +214,15 @@ function useFacePhotoTexture(props: Props): THREE.CanvasTexture | null {
         : new THREE.Vector3(0, face.faceH, 0);
     const normal = rotateY(face.normal, objectRotationY);
 
-    return bakePlaneTexture({ center, xAxis, yAxis, normal, fallbackColor: color, resolution: 96 }, cameras);
-  }, [category, w, h, d, color, cameras, ox, oy, oz, objectRotationY]);
+    return dominantPlaneColor(
+      { center, xAxis, yAxis, normal, fallbackColor: color },
+      cameras,
+      occluders,
+      // Coarser than a wall: a chair back is small, and a couple of hundred
+      // accepted samples already settles its colour.
+      24
+    );
+  }, [category, w, h, d, color, cameras, occluders, ox, oy, oz, objectRotationY]);
 }
 
 export default function FurnitureMesh(props: Props) {
@@ -177,12 +230,19 @@ export default function FurnitureMesh(props: Props) {
     () => getTexture(CATEGORY_TEXTURE[props.category] ?? "plaster", 2),
     [props.category]
   );
-  const photo = useFacePhotoTexture(props);
+  const faceColor = useFaceColor(props);
   return (
     <DetailMap.Provider value={map}>
-      <PhotoMap.Provider value={photo}>
-        <FurnitureGeometry {...props} />
-      </PhotoMap.Provider>
+      <FaceColor.Provider value={faceColor}>
+        {/* A colour measured off the object's own pixels beats colorize's
+            guess, so it becomes the whole object's colour rather than just
+            the one sampled panel's. Previously a chair's backrest got the
+            real colour while its seat and legs stayed whatever Gemini
+            assumed a chair looks like, which is why chairs came out a
+            uniform catalogue tan. Falls back to colorize, then the category
+            palette, when nothing saw this object. */}
+        <FurnitureGeometry {...props} color={faceColor ?? props.color} />
+      </FaceColor.Provider>
     </DetailMap.Provider>
   );
 }
@@ -307,6 +367,141 @@ function FurnitureGeometry({ category, dimensions, color, opacity }: Props) {
       );
     }
 
+    // Big boxy appliances: a slab body with a door seam and a handle. The
+    // seam is what stops these reading as featureless grey blocks.
+    case "refrigerator":
+    case "dishwasher":
+    case "washerDryer":
+    case "oven": {
+      const handleInset = Math.max(w * 0.08, 0.03);
+      return (
+        <group>
+          <Panel size={[w, h, d]} offset={[0, 0, 0]} color={color} opacity={opacity} roughness={0.35} metalness={0.45} />
+          <Panel
+            size={[w * 0.9, h * 0.88, d * 0.04]}
+            offset={[0, 0, d / 2 + 0.004]}
+            color={dark}
+            opacity={opacity}
+            roughness={0.3}
+            metalness={0.5}
+            usePhoto
+          />
+          <Panel
+            size={[Math.max(w * 0.05, 0.02), h * 0.5, Math.max(d * 0.05, 0.02)]}
+            offset={[w / 2 - handleInset, h * 0.1, d / 2 + 0.03]}
+            color="#8d9296"
+            opacity={opacity}
+            roughness={0.25}
+            metalness={0.8}
+          />
+        </group>
+      );
+    }
+
+    case "stove": {
+      const topThick = Math.max(h * 0.05, 0.02);
+      return (
+        <group>
+          <Panel size={[w, h - topThick, d]} offset={[0, -topThick / 2, 0]} color={color} opacity={opacity} roughness={0.4} metalness={0.4} />
+          <Panel size={[w, topThick, d]} offset={[0, h / 2 - topThick / 2, 0]} color="#26292c" opacity={opacity} roughness={0.2} metalness={0.5} />
+          {/* Four burners, so a cooktop reads as a cooktop from above. */}
+          {[
+            [-0.24, -0.22],
+            [0.24, -0.22],
+            [-0.24, 0.22],
+            [0.24, 0.22],
+          ].map(([fx, fz], i) => (
+            <mesh key={i} position={[w * fx, h / 2 + 0.002, d * fz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+              <circleGeometry args={[Math.min(w, d) * 0.12, 16]} />
+              <meshStandardMaterial color="#15171a" roughness={0.5} />
+            </mesh>
+          ))}
+        </group>
+      );
+    }
+
+    case "toilet": {
+      const tankH = h * 0.45;
+      return (
+        <group>
+          <mesh position={[0, -h / 2 + (h - tankH) / 2, d * 0.08]} castShadow receiveShadow>
+            <cylinderGeometry args={[Math.min(w, d) * 0.36, Math.min(w, d) * 0.3, h - tankH, 16]} />
+            <meshStandardMaterial color={color} roughness={0.18} opacity={opacity} transparent={opacity < 1} />
+          </mesh>
+          <Panel size={[w * 0.75, tankH, d * 0.28]} offset={[0, h / 2 - tankH / 2, -d / 2 + d * 0.16]} color={color} opacity={opacity} roughness={0.18} />
+        </group>
+      );
+    }
+
+    case "sink": {
+      const rim = Math.max(h * 0.15, 0.03);
+      return (
+        <group>
+          <Panel size={[w, rim, d]} offset={[0, h / 2 - rim / 2, 0]} color={color} opacity={opacity} roughness={0.15} metalness={0.3} />
+          <Panel size={[w * 0.75, h - rim, d * 0.75]} offset={[0, -rim / 2, 0]} color={dark} opacity={opacity} roughness={0.2} metalness={0.4} />
+          <mesh position={[0, h / 2 + h * 0.18, -d * 0.32]} castShadow>
+            <cylinderGeometry args={[Math.min(w, d) * 0.045, Math.min(w, d) * 0.05, h * 0.4, 12]} />
+            <meshStandardMaterial color="#b9bfc4" roughness={0.15} metalness={0.85} />
+          </mesh>
+        </group>
+      );
+    }
+
+    case "bathtub": {
+      const wallThick = Math.max(Math.min(w, d) * 0.07, 0.03);
+      return (
+        <group>
+          <Panel size={[w, h, d]} offset={[0, 0, 0]} color={color} opacity={opacity} roughness={0.15} />
+          {/* Recessed basin — without it a tub is just a slab. */}
+          <Panel
+            size={[w - wallThick * 2, h * 0.7, d - wallThick * 2]}
+            offset={[0, h * 0.2, 0]}
+            color={shade(color, -8)}
+            opacity={opacity}
+            roughness={0.2}
+          />
+        </group>
+      );
+    }
+
+    case "fireplace": {
+      return (
+        <group>
+          <Panel size={[w, h, d]} offset={[0, 0, 0]} color={color} opacity={opacity} roughness={0.9} />
+          <Panel
+            size={[w * 0.6, h * 0.55, d * 0.3]}
+            offset={[0, -h * 0.15, d / 2 - d * 0.15]}
+            color="#1a1613"
+            opacity={opacity}
+            roughness={1}
+          />
+        </group>
+      );
+    }
+
+    case "stairs": {
+      // Stepped rather than a ramp — the whole point of drawing stairs is
+      // that they read as stairs at a glance.
+      const steps = Math.max(3, Math.min(12, Math.round(h / 0.18)));
+      return (
+        <group>
+          {Array.from({ length: steps }, (_, i) => {
+            const stepH = h / steps;
+            const stepD = d / steps;
+            return (
+              <Panel
+                key={i}
+                size={[w, stepH, d - stepD * i]}
+                offset={[0, -h / 2 + stepH * (i + 0.5), d / 2 - (d - stepD * i) / 2]}
+                color={i % 2 === 0 ? color : shade(color, -6)}
+                opacity={opacity}
+              />
+            );
+          })}
+        </group>
+      );
+    }
+
     case "ottoman": {
       return (
         <group>
@@ -399,6 +594,109 @@ function FurnitureGeometry({ category, dimensions, color, opacity }: Props) {
             roughness={0.1}
             metalness={0.1}
           />
+        </group>
+      );
+    }
+
+    // Flat wall fittings. They all end up the same shape — a thin plate with
+    // a slightly inset face — so they share one case rather than five
+    // near-identical ones. The inset is what stops them reading as stickers
+    // painted onto the wall.
+    case "thermostat":
+    case "outlet":
+    case "lightSwitch":
+    case "vent":
+    case "clock": {
+      const plate = Math.max(d, 0.015);
+      return (
+        <group>
+          <Panel size={[w, h, plate]} offset={[0, 0, 0]} color={color} opacity={opacity} roughness={0.5} />
+          <Panel
+            size={[w * 0.66, h * 0.66, plate * 0.5]}
+            offset={[0, 0, plate * 0.5]}
+            color={dark}
+            opacity={opacity}
+            roughness={0.35}
+          />
+        </group>
+      );
+    }
+
+    case "smokeAlarm": {
+      const radius = Math.max(Math.min(w, h), 0.02) / 2;
+      const depth = Math.max(d, 0.02);
+      return (
+        <mesh rotation={[Math.PI / 2, 0, 0]} castShadow receiveShadow>
+          <cylinderGeometry args={[radius, radius * 0.92, depth, 20]} />
+          <meshStandardMaterial color={color} roughness={0.6} opacity={opacity} transparent={opacity < 1} />
+        </mesh>
+      );
+    }
+
+    case "artwork": {
+      const frameDepth = Math.max(d, 0.02);
+      return (
+        <group>
+          <Panel size={[w, h, frameDepth]} offset={[0, 0, 0]} color={dark} opacity={opacity} roughness={0.7} />
+          {/* The canvas takes the projected photo when a camera saw it —
+              artwork is the one small item where the real image is the whole
+              point of the object. */}
+          <Panel
+            size={[w * 0.88, h * 0.88, frameDepth * 0.4]}
+            offset={[0, 0, frameDepth * 0.4]}
+            color={color}
+            opacity={opacity}
+            roughness={0.85}
+            usePhoto
+          />
+        </group>
+      );
+    }
+
+    case "keyboard": {
+      return (
+        <group>
+          <Panel size={[w, h, d]} offset={[0, 0, 0]} color={color} opacity={opacity} roughness={0.7} />
+          <Panel
+            size={[w * 0.94, h * 0.25, d * 0.88]}
+            offset={[0, h * 0.4, 0]}
+            color={shade(color, 12)}
+            opacity={opacity}
+            roughness={0.6}
+          />
+        </group>
+      );
+    }
+
+    case "speaker": {
+      return (
+        <group>
+          <Panel size={[w, h, d]} offset={[0, 0, 0]} color={color} opacity={opacity} roughness={0.75} />
+          <mesh position={[0, 0, d / 2 + 0.002]} castShadow receiveShadow>
+            <cylinderGeometry args={[Math.min(w, h) * 0.3, Math.min(w, h) * 0.3, 0.006, 16]} />
+            <meshStandardMaterial color={shade(color, -20)} roughness={0.9} />
+          </mesh>
+        </group>
+      );
+    }
+
+    case "books": {
+      // A run of individual spines rather than one block, so a row of books
+      // doesn't read as a solid brick.
+      const count = Math.max(3, Math.min(9, Math.round(w / 0.04)));
+      const spine = w / count;
+      return (
+        <group>
+          {Array.from({ length: count }, (_, i) => (
+            <Panel
+              key={i}
+              size={[spine * 0.85, h * (0.82 + ((i * 37) % 18) / 100), d]}
+              offset={[-w / 2 + spine * (i + 0.5), 0, 0]}
+              color={i % 3 === 0 ? shade(color, 14) : i % 3 === 1 ? shade(color, -12) : color}
+              opacity={opacity}
+              roughness={0.9}
+            />
+          ))}
         </group>
       );
     }

@@ -19,6 +19,7 @@ const RESPONSE_SCHEMA = {
     floorColor: { type: Type.STRING },
     ceilingColor: { type: Type.STRING },
     floorMaterial: { type: Type.STRING, enum: [...SURFACE_MATERIALS] },
+    lightColor: { type: Type.STRING },
     objects: {
       type: Type.ARRAY,
       items: {
@@ -88,12 +89,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: listError.message }, { status: 500 });
   }
 
-  const photoUrls = (files ?? [])
+  const allPhotoUrls = (files ?? [])
     .filter((entry) => entry.id)
     .map(
       (entry) =>
         supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(`${session}/${entry.name}`).data.publicUrl
     );
+
+  // The LiDAR app now uploads ~64 frames, because *projection* needs dense
+  // coverage (see framesToUpload in RoomCaptureModel.swift). Reading a colour
+  // palette doesn't — it saturates after a couple of dozen views, and sending
+  // all of them just burns latency against this route's 60s budget. Take an
+  // even spread across the session rather than the first N, which on a walked
+  // scan would all be from the same corner.
+  const PALETTE_SAMPLE_LIMIT = 24;
+  const stride = Math.max(1, Math.ceil(allPhotoUrls.length / PALETTE_SAMPLE_LIMIT));
+  const photoUrls = allPhotoUrls.filter((_, i) => i % stride === 0).slice(0, PALETTE_SAMPLE_LIMIT);
 
   if (photoUrls.length === 0) {
     return NextResponse.json(
@@ -123,6 +134,12 @@ Report:
 Correct for photo lighting: report each surface's own color under neutral
 light, not the color a shadowed or warmly-lit frame happens to show. Someone
 should recognize their own room from these colors.
+
+- lightColor: the one exception to that correction — the tint of the room's
+  actual light sources, as #rrggbb (warm incandescent/tungsten reads
+  amber/orange; daylight or cool LED reads white-to-blue). This is used to
+  tint the rendered scene's lighting, so report what the room is lit *by*,
+  not what the surfaces are. Omit this single field if you can't tell.
 
 The room is ${layout.room.width.toFixed(1)}m × ${layout.room.length.toFixed(1)}m.
 Objects already detected in it, with their floor positions:
@@ -154,6 +171,7 @@ for that kind of furniture rather than omitting it. Return every id.`;
     floorColor?: string;
     ceilingColor?: string;
     floorMaterial?: string;
+    lightColor?: string;
     objects?: { id: string; color: string }[];
   };
   try {
@@ -175,6 +193,7 @@ for that kind of furniture rather than omitting it. Return every id.`;
       ...(SURFACE_MATERIALS.includes(palette.floorMaterial as (typeof SURFACE_MATERIALS)[number]) && {
         floorMaterial: palette.floorMaterial,
       }),
+      ...(HEX.test(palette.lightColor ?? "") && { lightColor: palette.lightColor }),
     },
     objects: layout.objects.map((o) => {
       const color = byId.get(o.id);

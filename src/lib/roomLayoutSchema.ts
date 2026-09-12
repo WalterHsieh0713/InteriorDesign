@@ -17,12 +17,56 @@ export const OBJECT_CATEGORIES = [
   "mirror",
   "plant",
   "rug",
+  // Appliances and fixtures. RoomPlan detects every one of these natively —
+  // the exporter used to collapse them all into "other", which is why a
+  // scanned kitchen or bathroom came back as anonymous grey boxes.
+  "refrigerator",
+  "oven",
+  "stove",
+  "dishwasher",
+  "washerDryer",
+  "sink",
+  "toilet",
+  "bathtub",
+  "fireplace",
+  "stairs",
+  // Small items. LiDAR cannot see any of these — CapturedRoom.Object.Category
+  // is a fixed 16-value Apple enum with no concept of a thermostat — so they
+  // come from /api/detect-details instead, which finds them in the captured
+  // photos and back-projects them onto the already-scanned geometry.
+  "keyboard",
+  "speaker",
+  "clock",
+  "artwork",
+  "thermostat",
+  "smokeAlarm",
+  "outlet",
+  "lightSwitch",
+  "vent",
+  "books",
   "door",
   "window",
   "other",
 ] as const;
 
 export type ObjectCategory = (typeof OBJECT_CATEGORIES)[number];
+
+/// Categories that describe the room's structure rather than its contents.
+/// These are measured in place and dragging them is always a mistake — a door
+/// halfway across the floor is nonsense, and moving one silently corrupts the
+/// only record of where the real opening was. The small wall-mounted fittings
+/// are here for the same reason: a light switch is part of the wall.
+export const FIXED_CATEGORIES: readonly string[] = [
+  "door",
+  "window",
+  "stairs",
+  "fireplace",
+  "thermostat",
+  "smokeAlarm",
+  "outlet",
+  "lightSwitch",
+  "vent",
+];
 
 export const SURFACE_MATERIALS = [
   "carpet",
@@ -107,6 +151,23 @@ export const WallFeatureSchema = z.object({
 
 export type WallFeature = z.infer<typeof WallFeatureSchema>;
 
+// One measured wall segment. Real rooms are not rectangles — they have bays,
+// angled corners, partition walls, sloped ceilings — and collapsing them to a
+// width×length box puts anything standing against a non-axis-aligned wall
+// somewhere it isn't, usually floating in open floor. RoomPlan measures each
+// wall individually, so when we have that, render it.
+//
+// `position` is the wall's center and `rotationY` its yaw, in exactly the same
+// room-aligned frame as `objects`. `dimensions` is [width, height, thickness].
+// Absent on the Gemini photo path (which only ever estimates a bounding box),
+// and on every layout captured before this existed — both keep falling back to
+// the four-wall box built from room.width/length/height.
+const wall = z.object({
+  position: vec3,
+  rotationY: z.number(),
+  dimensions: vec3,
+});
+
 // Colors and materials are optional throughout: the LiDAR path has no camera
 // imagery to sample them from, and layouts captured before this existed must
 // keep validating. Anything missing falls back to the category palette.
@@ -145,10 +206,19 @@ export const RoomLayoutSchema = z.object({
       // additive — a scan never sets it, and anything that doesn't understand
       // a given preset can ignore the object entirely.
       preset: z.string().optional(),
+      // A human correction, displayed instead of the category. Detection gets
+      // things wrong — a bin read as a stool, a radiator as a shelf — but the
+      // category has to stay inside the enum because the renderer picks the
+      // object's geometry from it. So a free-text correction lives here, and
+      // the category can be re-pointed separately when the shape is wrong too.
+      label: z.string().max(60).optional(),
     })
   ),
+  walls: z.array(wall).optional(),
   cameraFrames: z.array(cameraFrame).optional(),
 });
+
+export type Wall = z.infer<typeof wall>;
 
 export type CameraFrame = z.infer<typeof cameraFrame>;
 
