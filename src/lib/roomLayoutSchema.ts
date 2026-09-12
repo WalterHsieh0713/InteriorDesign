@@ -51,6 +51,23 @@ const cameraFrame = z.object({
   height: z.number().positive(),
 });
 
+// One measured wall segment. Real rooms are not rectangles — they have bays,
+// angled corners, partition walls, sloped ceilings — and collapsing them to a
+// width×length box puts anything standing against a non-axis-aligned wall
+// somewhere it isn't, usually floating in open floor. RoomPlan measures each
+// wall individually, so when we have that, render it.
+//
+// `position` is the wall's center and `rotationY` its yaw, in exactly the same
+// room-aligned frame as `objects`. `dimensions` is [width, height, thickness].
+// Absent on the Gemini photo path (which only ever estimates a bounding box),
+// and on every layout captured before this existed — both keep falling back to
+// the four-wall box built from room.width/length/height.
+const wall = z.object({
+  position: vec3,
+  rotationY: z.number(),
+  dimensions: vec3,
+});
+
 // Colors and materials are optional throughout: the LiDAR path has no camera
 // imagery to sample them from, and layouts captured before this existed must
 // keep validating. Anything missing falls back to the category palette.
@@ -79,8 +96,11 @@ export const RoomLayoutSchema = z.object({
       color: hexColor.optional(),
     })
   ),
+  walls: z.array(wall).optional(),
   cameraFrames: z.array(cameraFrame).optional(),
 });
+
+export type Wall = z.infer<typeof wall>;
 
 export type CameraFrame = z.infer<typeof cameraFrame>;
 

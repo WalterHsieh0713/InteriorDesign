@@ -6,8 +6,8 @@ import { OrbitControls, Html, Environment } from "@react-three/drei";
 import * as THREE from "three";
 import type { RoomLayout } from "@/lib/roomLayoutSchema";
 import FurnitureMesh from "./FurnitureMesh";
-import { getTexture, type TextureKind } from "./textures";
-import { prepareCameras, bakePlaneTexture, type PreparedCamera } from "./projectiveTexture";
+import { getTexture, getContactShadowTexture, type TextureKind } from "./textures";
+import { prepareCameras, bakePlaneTexture, rotateY, type PreparedCamera } from "./projectiveTexture";
 
 // Plausible real-furniture tones, used only when we have no sampled color
 // for an object. The previous palette was a categorical data-viz set — lime
@@ -74,9 +74,13 @@ class EnvironmentBoundary extends Component<{ children: ReactNode }, { failed: b
   }
 }
 
-function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedCamera[] }) {
-  const { width, length, height } = room;
-  const wallColor = room.wallColor ?? "#d8d4cd";
+/// One continuous plane under the whole room, always the full bounding
+/// rectangle even when the walls above it aren't rectangular. Deliberate: an
+/// unbroken floor never tears or shows a hole when furniture is dragged off
+/// its original spot, and a little floor extending past an angled wall reads
+/// far better than a gap at the baseboard.
+function Floor({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedCamera[] }) {
+  const { width, length } = room;
   const floorColor = room.floorColor ?? "#9c968d";
   const material = room.floorMaterial ?? "other";
   const floorRoughness = FLOOR_ROUGHNESS[material] ?? 0.8;
@@ -87,12 +91,7 @@ function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedC
     () => getTexture(FLOOR_TEXTURE[material] ?? "carpet", Math.max(4, Math.round(Math.max(width, length) / 1.5))),
     [material, width, length]
   );
-  const wallMap = useMemo(() => getTexture("plaster", 6), []);
 
-  // Real captured photos projected onto each surface when the LiDAR path
-  // recorded camera poses (see projectiveTexture.ts). `cameras` is empty for
-  // every other session, in which case each of these is just null and the
-  // procedural map/flat color below renders exactly as it did before.
   const floorPhoto = useMemo(
     () =>
       bakePlaneTexture(
@@ -108,6 +107,94 @@ function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedC
       ),
     [cameras, width, length, floorColor]
   );
+
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <planeGeometry args={[width, length]} />
+      <meshStandardMaterial
+        color={floorPhoto ? "#ffffff" : floorColor}
+        map={floorPhoto ?? floorMap}
+        side={THREE.DoubleSide}
+        roughness={floorPhoto ? 0.75 : floorRoughness}
+      />
+    </mesh>
+  );
+}
+
+/// Renders each individually measured wall where it actually stands, instead
+/// of forcing the room into a width×length box. Each wall gets its own photo
+/// bake, with the surface normal flipped to face the room's interior — that's
+/// the side the cameras were on, so it's the only side worth projecting.
+function MeasuredWalls({
+  walls,
+  wallColor,
+  cameras,
+}: {
+  walls: NonNullable<RoomLayout["walls"]>;
+  wallColor: string;
+  cameras: PreparedCamera[];
+}) {
+  const wallMap = useMemo(() => getTexture("plaster", 6), []);
+  const opacity = cameras.length > 0 ? 0.92 : 0.4;
+
+  const baked = useMemo(
+    () =>
+      walls.map((w) => {
+        const [width, height] = w.dimensions;
+        const center = new THREE.Vector3(w.position[0], w.position[1], w.position[2]);
+
+        // A wall's stored yaw says which way it runs, not which face is
+        // inward. Point the normal at the room's center (the origin) so the
+        // bake samples the side the scanner was actually standing on.
+        const normal = rotateY(new THREE.Vector3(0, 0, 1), w.rotationY);
+        if (normal.dot(center.clone().negate()) < 0) normal.negate();
+
+        return bakePlaneTexture(
+          {
+            center,
+            xAxis: rotateY(new THREE.Vector3(width, 0, 0), w.rotationY),
+            yAxis: new THREE.Vector3(0, height, 0),
+            normal,
+            fallbackColor: wallColor,
+            resolution: 192,
+          },
+          cameras
+        );
+      }),
+    [walls, wallColor, cameras]
+  );
+
+  return (
+    <group>
+      {walls.map((w, i) => {
+        const photo = baked[i];
+        return (
+          <mesh
+            key={i}
+            position={w.position}
+            rotation={[0, w.rotationY, 0]}
+            receiveShadow
+          >
+            <planeGeometry args={[w.dimensions[0], w.dimensions[1]]} />
+            <meshStandardMaterial
+              color={photo ? "#ffffff" : wallColor}
+              map={photo ?? wallMap}
+              side={THREE.DoubleSide}
+              transparent
+              opacity={opacity}
+              roughness={photo ? 0.85 : 0.95}
+            />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedCamera[] }) {
+  const { width, length, height } = room;
+  const wallColor = room.wallColor ?? "#d8d4cd";
+  const wallMap = useMemo(() => getTexture("plaster", 6), []);
   const backWallPhoto = useMemo(
     () =>
       bakePlaneTexture(
@@ -189,15 +276,6 @@ function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedC
 
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[width, length]} />
-        <meshStandardMaterial
-          color={floorPhoto ? "#ffffff" : floorColor}
-          map={floorPhoto ?? floorMap}
-          side={THREE.DoubleSide}
-          roughness={floorPhoto ? 0.75 : floorRoughness}
-        />
-      </mesh>
       <mesh position={[0, height / 2, -length / 2]} receiveShadow>
         <planeGeometry args={[width, height]} />
         {wallMaterial(backWallPhoto)}
@@ -234,11 +312,18 @@ function DraggableObject({
   onDragStart: (id: string, y: number) => void;
   cameras: PreparedCamera[];
 }) {
-  const [, h] = obj.dimensions;
+  const [w, h, d] = obj.dimensions;
   // The object's own sampled color when we have one — that's what makes a
   // render recognizable as someone's actual room. Category palette is just
   // the fallback for older layouts and the LiDAR path.
   const color = obj.color ?? CATEGORY_COLORS[obj.category] ?? CATEGORY_COLORS.other;
+
+  // Only things actually resting on the floor get a contact shadow. A wall
+  // TV or a mirror would otherwise drop a blob on the floor beneath it,
+  // which reads as a bug rather than as grounding.
+  const shadowTexture = useMemo(() => getContactShadowTexture(), []);
+  const baseHeight = obj.position[1] - h / 2;
+  const showContactShadow = shadowTexture !== null && baseHeight < 0.3 && obj.category !== "rug";
 
   return (
     <group
@@ -261,6 +346,24 @@ function DraggableObject({
       />
       {obj.category === "lamp" && (
         <pointLight position={[0, h * 0.3, 0]} color={LAMP_LIGHT_COLOR} intensity={2.5} distance={4} decay={2} />
+      )}
+      {showContactShadow && (
+        <mesh
+          // Sits just above the floor plane (world y ≈ 0) regardless of how
+          // high this object's own center is — hence subtracting its y.
+          position={[0, -obj.position[1] + 0.012, 0]}
+          rotation={[-Math.PI / 2, 0, 0]}
+        >
+          <planeGeometry args={[w * 1.35, d * 1.35]} />
+          <meshBasicMaterial
+            map={shadowTexture}
+            transparent
+            // Never write depth: the blob must not occlude the floor's own
+            // texture or another object's shadow overlapping it.
+            depthWrite={false}
+            opacity={isDragging ? 0.4 : 0.75}
+          />
+        </mesh>
       )}
       <Html position={[0, h / 2 + 0.15, 0]} center distanceFactor={8} style={{ pointerEvents: "none" }}>
         <div
@@ -446,7 +549,16 @@ function Scene({
             decay={2}
           />
         ))}
-      <Walls room={layout.room} cameras={cameras} />
+      <Floor room={layout.room} cameras={cameras} />
+      {layout.walls?.length ? (
+        <MeasuredWalls
+          walls={layout.walls}
+          wallColor={layout.room.wallColor ?? "#d8d4cd"}
+          cameras={cameras}
+        />
+      ) : (
+        <Walls room={layout.room} cameras={cameras} />
+      )}
       {objects.map((obj) => (
         <DraggableObject
           key={obj.id}
