@@ -252,3 +252,40 @@ profiles, saves, and auto-tagging. Auto-tagging looks feasible from layout
 data alone (object density, colour variance, area) but not from imagery —
 LiDAR sessions upload no photos at all, so a vision approach would tag half
 the feed and silently skip the rest.
+
+### v3 — IN PROGRESS — discovery: similarity, profiles, affinity feed
+
+**If you are picking this up cold, read this section first.** It is written
+to be resumable: each step below is independently useful, independently
+committed, and safe to stop after. Tick the boxes as you land them.
+
+The goal is the use case the product is uniquely able to serve and currently
+serves worst: *"I have a room this size — what did other people do with
+theirs?"* Nobody else can answer that, because nobody else has real measured
+rooms. Today it is buried in an area-band dropdown.
+
+- [ ] **3a — `src/lib/similarity.ts` + "Similar rooms" on the post page.**
+      One scorer, reused everywhere. Same `room_type` scores highest, then
+      closeness in `area_m2`, then overlapping `style_tags`, then similar
+      object density. Candidates are pre-filtered in SQL to a generous area
+      band and scored in TypeScript — at this volume that is simpler and far
+      easier to tune than pushing weights into Postgres.
+- [ ] **3b — `/u/[handle]` profile page.** `author_handle` is already on
+      every post, so this is one query. It turns a wall of plans into a set
+      of people, which is the part of "community" that is currently missing
+      entirely. Link it from the card byline and the post page.
+- [ ] **3c — For You ranked by affinity.** When this browser has published a
+      design, store that `session_id` in `localStorage` and rank For You by
+      similarity to it. Fall back to newest when we do not know the visitor's
+      room. This is what makes the tab name honest.
+
+**Deliberately not in v3:** saves/collections, auto-tagging, and real
+accounts. Auto-tagging is feasible from layout data alone (object density,
+colour variance, area) but not from imagery, because LiDAR sessions upload no
+photos — a vision approach would tag half the feed and silently skip the rest.
+
+**Constraint worth knowing:** the identity ceiling still applies. Profiles
+are keyed on a self-declared handle stored in one browser, so two people can
+claim the same name and one person on two devices is two people. That is the
+accepted cost of no accounts, and it is the thing to fix first if this feed
+ever matters.
