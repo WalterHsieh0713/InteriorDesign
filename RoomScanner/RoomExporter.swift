@@ -9,6 +9,29 @@ enum RoomExporter {
     static func buildLayout(from room: CapturedRoom) -> RoomLayoutJSON {
         let frame = alignmentFrame(for: room.walls)
 
+        // Temporary diagnostics — uploaded layouts were still landing
+        // off-center and below the floor after the alignment fix, and the
+        // stored JSON alone can't distinguish "frame computed wrong" from
+        // "frame never applied". Remove once that's settled.
+        print("""
+        [RoomExporter] walls=\(room.walls.count) objects=\(room.objects.count)
+          yaw=\(frame.yaw) center=(\(frame.centerX), \(frame.centerZ)) floorY=\(frame.floorY)
+          size=\(frame.width) x \(frame.length) x \(frame.height)
+        """)
+        if let sample = room.objects.first {
+            let t = sample.transform.columns.3
+            let placed = place(sample.transform, in: frame)
+            print("""
+            [RoomExporter] sample \(sample.category)
+              raw=(\(t.x), \(t.y), \(t.z)) dims=\(sample.dimensions)
+              placed=\(placed.position) base_y=\(placed.position[1] - sample.dimensions.y / 2)
+            """)
+        }
+        if let wall = room.walls.first {
+            let t = wall.transform.columns.3
+            print("[RoomExporter] sample wall center_y=\(t.y) height=\(wall.dimensions.y)")
+        }
+
         var objects = room.objects.map { objectJSON(from: $0, in: frame) }
         objects += room.doors.map { surfaceJSON(from: $0, category: "door", in: frame) }
         objects += room.windows.map { surfaceJSON(from: $0, category: "window", in: frame) }
