@@ -1,0 +1,24 @@
+# IKEA products to add to the catalog.
+#
+#   node scripts/add-ikea-products.mjs
+#
+# One product-page URL per line. Paste the URL for the exact colour variant you
+# want — IKEA gives each variant its own item number, price and 3D model.
+#
+# Everything else is fetched: name, price, photo, colour, IKEA's own 3D model,
+# and dimensions measured from that model. Nothing is estimated.
+#
+# A product with no 3D model on its page is reported and skipped, so the
+# catalog never gains an item the room cannot render properly.
+#
+# Add a category after the URL only if the guess would be wrong:
+#   https://www.ikea.com/us/en/p/…/    dresser
+#
+# Valid categories: bed desk chair stool sofa table shelf dresser nightstand
+#                   ottoman tv monitor lamp mirror plant rug other
+
+https://www.ikea.com/us/en/p/micke-desk-white-80213074/
+https://www.ikea.com/us/en/p/billy-bookcase-white-20522046/
+https://www.ikea.com/us/en/p/glostad-loveseat-knisa-dark-gray-70489011/
+https://www.ikea.com/us/en/p/kyrre-stool-birch-60416925/
+https://www.ikea.com/us/en/p/glostad-ottoman-knisa-dark-gray-60595936/

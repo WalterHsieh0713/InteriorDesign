@@ -1,14 +1,25 @@
 import { CatalogItemSchema, type CatalogItem } from "./catalogItem";
 import { GENERATED_ITEMS } from "./catalog.generated";
 import { ACCESSORY_ITEMS } from "./catalog.accessories";
+import { IKEA_ITEMS } from "./catalog.ikea";
 import { MANUAL_ITEMS } from "./catalog.manual";
 import type { ObjectCategory } from "./roomLayoutSchema";
 
 // Hand-authored items win over generated ones with the same id — that is how a
 // bad auto-built row gets corrected without editing generated output.
+/**
+ * Later sources overwrite earlier ones, so this order is a trust ranking.
+ *
+ * `IKEA_ITEMS` beat the search-API rows because their dimensions are measured
+ * from IKEA's own 3D model rather than inferred from an ambiguous two-number
+ * summary. `MANUAL_ITEMS` beat even those: a number a person read off the
+ * Measurements tab is IKEA stating the product's size, where a bounding box can
+ * include an overhanging cushion or a splayed leg.
+ */
 function merge(): CatalogItem[] {
   const byId = new Map<string, CatalogItem>();
   for (const item of GENERATED_ITEMS) byId.set(item.id, item);
+  for (const item of IKEA_ITEMS) byId.set(item.id, item);
   for (const item of ACCESSORY_ITEMS) byId.set(item.id, item);
   for (const item of MANUAL_ITEMS) byId.set(item.id, item);
   return [...byId.values()];
