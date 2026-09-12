@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
-import { OrbitControls, Html, Environment, SoftShadows } from "@react-three/drei";
+import { OrbitControls, Html, Environment } from "@react-three/drei";
 import * as THREE from "three";
 import type { RoomLayout } from "@/lib/roomLayoutSchema";
 import FurnitureMesh from "./FurnitureMesh";
@@ -47,6 +47,25 @@ const FLOOR_TEXTURE: Record<string, TextureKind> = {
   vinyl: "plaster",
   other: "carpet",
 };
+
+// The HDR environment map is fetched from a CDN at runtime. On a flaky
+// phone connection that fetch can reject, and a rejected (not just slow)
+// resource isn't something Suspense catches — it's a thrown error, which
+// with no boundary unmounts the entire Canvas tree and leaves a black
+// screen behind. Swallow it here instead: losing reflections is fine,
+// losing the whole room is not.
+class EnvironmentBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: unknown) {
+    console.warn("Environment lighting failed to load, continuing without it:", error);
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 function Walls({ room }: { room: RoomLayout["room"] }) {
   const { width, length, height } = room;
@@ -210,20 +229,26 @@ function Scene({
 
   return (
     <>
-      <SoftShadows size={28} samples={12} />
       {/* Image-based lighting does most of the work here — flat ambient
           light makes every material read as the same plastic. The preset
-          HDR is fetched from a CDN, so keep it behind Suspense: a slow or
-          failed fetch should cost us reflections, not the whole scene. */}
-      <Suspense fallback={null}>
-        <Environment preset="apartment" />
-      </Suspense>
+          HDR is fetched from a CDN, so keep it behind Suspense *and* an
+          error boundary: a slow fetch should only delay reflections, and a
+          failed one shouldn't take the rest of the room down with it.
+          SoftShadows (drei's PCSS shader) was dropped — it's a known cause
+          of crashed/lost WebGL contexts on mobile GPUs, which is exactly
+          what "renders fine, then goes black" looks like. Canvas's default
+          `shadows` prop still gives cheap PCF shadows. */}
+      <EnvironmentBoundary>
+        <Suspense fallback={null}>
+          <Environment preset="apartment" />
+        </Suspense>
+      </EnvironmentBoundary>
       <ambientLight intensity={0.25} />
       <directionalLight
         position={[layout.room.width, layout.room.height * 3, layout.room.length]}
         intensity={1.7}
         castShadow
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={[1024, 1024]}
         shadow-camera-left={-layout.room.width}
         shadow-camera-right={layout.room.width}
         shadow-camera-top={layout.room.length}
@@ -268,6 +293,11 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
   const [layout, setLayout] = useState<RoomLayout | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // If the GPU does drop the context (memory pressure on an older phone,
+  // say), three.js doesn't rebuild lost textures/geometry on its own —
+  // remounting the whole Canvas on restore is the reliable way back to a
+  // working scene instead of a half-recovered black one.
+  const [canvasKey, setCanvasKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -341,9 +371,20 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
         {saving && <div className="text-gray-400">Saving…</div>}
       </div>
       <Canvas
+        key={canvasKey}
         shadows
         camera={{ position: initialCameraPosition as unknown as [number, number, number], fov: 55 }}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1 }}
+        onCreated={({ gl }) => {
+          const canvas = gl.domElement;
+          canvas.addEventListener("webglcontextlost", (e) => {
+            e.preventDefault();
+            console.warn("WebGL context lost — waiting for restore");
+          });
+          canvas.addEventListener("webglcontextrestored", () => {
+            setCanvasKey((k) => k + 1);
+          });
+        }}
       >
         <Scene layout={layout} onPositionsSettled={handlePositionsSettled} />
       </Canvas>
