@@ -276,10 +276,10 @@ rooms. Today it is buried in an area-band dropdown.
       every post, so this is one query. It turns a wall of plans into a set
       of people, which is the part of "community" that is currently missing
       entirely. Link it from the card byline and the post page.
-- [ ] **3c — For You ranked by affinity.** When this browser has published a
-      design, store that `session_id` in `localStorage` and rank For You by
-      similarity to it. Fall back to newest when we do not know the visitor's
-      room. This is what makes the tab name honest.
+- [x] **3c — DONE.** `session_id` persisted to `localStorage` on publish
+      (`setMySession` in `device.ts`), sent as `mySession` on the For You
+      tab, and used to re-rank the page already fetched — see the v3c entry
+      below for what was fixed and verified.
 
 **Deliberately not in v3:** saves/collections, auto-tagging, and real
 accounts. Auto-tagging is feasible from layout data alone (object density,
@@ -291,3 +291,30 @@ are keyed on a self-declared handle stored in one browser, so two people can
 claim the same name and one person on two devices is two people. That is the
 accepted cost of no accounts, and it is the thing to fix first if this feed
 ever matters.
+
+### v3c — 2026-09-12 — finished and verified against the live database
+
+Picked up from "Unfinished Claude Phase 3 Update" (`244ec1d`) — the wiring
+(`device.ts`, `ShareComposer.tsx`, `FeedView.tsx`, `api/feed/route.ts`) was
+already there and needed one fix, not a rebuild.
+
+**Bug fixed:** `rankSimilar()` is documented to exclude the target's own
+post (`candidates.filter(c => c.id !== target.id)`), but the `mine` query in
+`api/feed/route.ts` never selected `id` — so `target.id` was `undefined` and
+nothing was ever excluded. A post scores maximally similar to itself, so
+publishing a room could pin it at #1 of your own "rooms like yours" feed.
+Fixed by selecting `id` alongside the other columns.
+
+**Verified against the live database**, not just curled locally against
+seed data: `GET /api/feed?tab=foryou` with a real `mySession` (a published
+`office`, 0.59 m² post) re-ranks the page toward other `office` posts ahead
+of larger rooms that were more recent, and the `mySession` post itself is
+now absent from its own results. Without `mySession`, ordering is untouched
+(plain recency), matching "fall back to newest when we do not know the
+visitor's room."
+
+**Confirms the existing design trade-off is working as intended, not a
+bug:** this re-ranks only the already-fetched page (`PAGE_SIZE = 24`), not
+the whole table — a well-matched post sitting on page 5 won't surface
+early. That's the documented cost of not scoring the entire table per
+request, unchanged here.

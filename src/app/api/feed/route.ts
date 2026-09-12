@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
     const { data: mine } = await withRetry(() =>
       supabaseAdmin()
         .from("posts")
-        .select("room_type, area_m2, style_tags, object_count")
+        .select("id, room_type, area_m2, style_tags, object_count")
         .eq("session_id", mySession)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -110,7 +110,11 @@ export async function GET(req: NextRequest) {
     );
 
     if (mine) {
-      posts = rankSimilar(mine as SimilarityTarget, posts, posts.length);
+      // rankSimilar excludes candidates matching `target.id` — without it
+      // selected here, nothing was ever excluded, and your own room could
+      // rank #1 in your own "rooms like yours" feed (a post is maximally
+      // similar to itself).
+      posts = rankSimilar(mine as SimilarityTarget & { id: string }, posts, posts.length);
     }
   }
 
