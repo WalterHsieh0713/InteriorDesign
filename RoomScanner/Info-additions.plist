@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Reference only — do not add this as a second Info.plist file.
+  In modern Xcode (Info tab generated from build settings), add this single
+  key via target > Info > Custom iOS Target Properties > "+":
+
+    Key:   Privacy - Camera Usage Description  (NSCameraUsageDescription)
+    Value: This app uses the camera and LiDAR to scan your room.
+
+  That one key is required — RoomPlan/ARKit will crash the app on launch of
+  the scan screen without it.
+
+  Second change, for the web app's "Scan with LiDAR" QR handoff
+  (DeepLinkSession in RoomScannerApp.swift): target > Info tab > "URL Types"
+  section > "+":
+
+    Identifier:  (this app's bundle ID is fine)
+    URL Schemes: roomscanner
+
+  Without this, scanning the web app's LiDAR QR code does nothing — iOS has
+  no app registered to open a roomscanner:// link.
+-->
+<plist version="1.0">
+<dict>
+    <key>NSCameraUsageDescription</key>
+    <string>This app uses the camera and LiDAR to scan your room.</string>
+</dict>
+</plist>
