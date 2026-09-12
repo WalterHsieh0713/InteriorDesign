@@ -13,19 +13,28 @@ struct RoomScanView: View {
             RoomCaptureRepresentable(captureView: model.captureView)
                 .ignoresSafeArea()
 
-            HStack {
-                Button("Cancel", role: .cancel) {
-                    model.stopSession()
-                    onCancel()
-                }
-                .buttonStyle(.bordered)
+            VStack(spacing: 10) {
+                Label(
+                    "\(model.capturedFrameCount) colour photo\(model.capturedFrameCount == 1 ? "" : "s")",
+                    systemImage: "camera.fill"
+                )
+                .font(.footnote)
+                .foregroundStyle(model.capturedFrameCount > 0 ? .secondary : .orange)
 
-                Spacer()
+                HStack {
+                    Button("Cancel", role: .cancel) {
+                        model.stopSession()
+                        onCancel()
+                    }
+                    .buttonStyle(.bordered)
 
-                Button("Done") {
-                    model.stopSession()
+                    Spacer()
+
+                    Button("Done") {
+                        model.stopSession()
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
             }
             .padding()
             .background(.ultraThinMaterial)

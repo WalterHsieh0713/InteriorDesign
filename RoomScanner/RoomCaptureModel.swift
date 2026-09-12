@@ -17,17 +17,35 @@ final class RoomCaptureModel: NSObject, ObservableObject, RoomCaptureViewDelegat
     @Published var finishedRoom: CapturedRoom?
     @Published var captureError: String?
 
-    /// JPEG frames sampled during the scan. RoomPlan's CapturedRoom carries
-    /// no imagery at all, so without these the web app has no way to know
-    /// what anything in the room actually looks like and falls back to a
-    /// generic palette. Uploaded alongside the layout and fed to
-    /// /api/colorize.
-    private(set) var sampledFrames: [Data] = []
+    /// Shown live during the scan so it's visible that colour capture is
+    /// actually happening — colours silently not being collected is the
+    /// kind of thing you only discover after the scan is over.
+    @Published private(set) var capturedFrameCount = 0
+
+    /// Every frame sampled during the scan. RoomPlan's CapturedRoom carries
+    /// no imagery at all, so without these the web app has no idea what
+    /// anything in the room looks like and falls back to a generic palette.
+    private var frameBuffer: [Data] = []
 
     private var sampleTimer: Timer?
     private let ciContext = CIContext()
-    private let maxFrames = 6
+    private let encodeQueue = DispatchQueue(label: "room-scanner.frame-encode", qos: .utility)
+
     private let sampleInterval: TimeInterval = 2.5
+    /// ~100s of scanning. Past this we stop rather than grow without bound;
+    /// most room scans finish well inside it.
+    private let bufferLimit = 40
+    private let framesToUpload = 6
+
+    /// Six frames spread evenly across the whole scan, not the first six.
+    /// Sampling only at the start would hand back six photos of whichever
+    /// corner you happened to begin in, leaving the rest of the room with
+    /// no colour information.
+    var sampledFrames: [Data] {
+        guard frameBuffer.count > framesToUpload else { return frameBuffer }
+        let step = Double(frameBuffer.count - 1) / Double(framesToUpload - 1)
+        return (0..<framesToUpload).map { frameBuffer[Int((Double($0) * step).rounded())] }
+    }
 
     override init() {
         captureView = RoomCaptureView(frame: .zero)
@@ -38,12 +56,13 @@ final class RoomCaptureModel: NSObject, ObservableObject, RoomCaptureViewDelegat
     func startSession() {
         finishedRoom = nil
         captureError = nil
-        sampledFrames = []
+        frameBuffer = []
+        capturedFrameCount = 0
         captureView.captureSession.run(configuration: sessionConfig)
 
-        // Sampled on a timer rather than every frame: we only need enough
-        // coverage to read colors off the walls, floor and furniture, and
-        // holding on to 60fps of camera buffers would be wasteful.
+        // Sampled on a timer rather than every frame: colours only need
+        // enough coverage to read walls, floor and furniture, and holding
+        // 60fps of camera buffers would be pointless.
         sampleTimer = Timer.scheduledTimer(withTimeInterval: sampleInterval, repeats: true) { [weak self] _ in
             self?.sampleCurrentFrame()
         }
@@ -56,7 +75,7 @@ final class RoomCaptureModel: NSObject, ObservableObject, RoomCaptureViewDelegat
     }
 
     private func sampleCurrentFrame() {
-        guard sampledFrames.count < maxFrames else {
+        guard frameBuffer.count < bufferLimit else {
             sampleTimer?.invalidate()
             sampleTimer = nil
             return
@@ -66,10 +85,19 @@ final class RoomCaptureModel: NSObject, ObservableObject, RoomCaptureViewDelegat
         // also be pulled by setting an ARSessionDelegate on that session.
         guard let frame = captureView.captureSession.arSession.currentFrame else { return }
 
-        let image = CIImage(cvPixelBuffer: frame.capturedImage)
-        guard let cgImage = ciContext.createCGImage(image, from: image.extent) else { return }
-        if let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.5) {
-            sampledFrames.append(jpeg)
+        // Encode off the main thread — JPEG-ing a full camera frame takes
+        // long enough to visibly hitch the AR session otherwise.
+        encodeQueue.async { [weak self] in
+            guard let self else { return }
+            let image = CIImage(cvPixelBuffer: frame.capturedImage)
+            guard let cgImage = self.ciContext.createCGImage(image, from: image.extent),
+                  let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.5)
+            else { return }
+
+            DispatchQueue.main.async {
+                self.frameBuffer.append(jpeg)
+                self.capturedFrameCount = self.frameBuffer.count
+            }
         }
     }
 
