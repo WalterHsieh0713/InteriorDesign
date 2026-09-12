@@ -10,7 +10,7 @@ import type { RoomLayout } from "./roomLayoutSchema";
  * dragging the desk it sits above: the run is recomputed, not baked.
  */
 
-export type LedPresetId = "ceiling" | "desk" | "bed" | "headboard";
+export type LedPresetId = "ceiling" | "bed" | "headboard";
 
 export type LedSegment = {
   /** Both ends in room space, metres. */
@@ -29,11 +29,6 @@ export const LED_PRESETS: LedPreset[] = [
     id: "ceiling",
     label: "Ceiling perimeter",
     description: "Around the top of all four walls",
-  },
-  {
-    id: "desk",
-    label: "Behind the desk",
-    description: "Backlight along the wall above your desk",
   },
   {
     id: "bed",
@@ -60,10 +55,8 @@ const findCategory = (objects: Obj[], category: string) =>
  * attach it to.
  */
 export function availablePresets(objects: Obj[]): LedPreset[] {
-  const hasDesk = !!findCategory(objects, "desk");
   const hasBed = !!findCategory(objects, "bed");
   return LED_PRESETS.filter((p) => {
-    if (p.id === "desk") return hasDesk;
     if (p.id === "bed" || p.id === "headboard") return hasBed;
     return true;
   });
@@ -100,19 +93,6 @@ export function segmentsFor(
       { from: [hw - off, ch, hl - off], to: [-hw + off, ch, hl - off] },
       { from: [-hw + off, ch, hl - off], to: [-hw + off, ch, -hl + off] },
     ];
-  }
-
-  if (preset === "desk") {
-    const desk = findCategory(objects, "desk");
-    if (!desk) return [];
-    const [dx, , dz] = desk.position;
-    const y = desk.position[1] + desk.dimensions[1] / 2 + 0.45;
-    const side = backWall(desk, room);
-    const half = desk.dimensions[0] / 2;
-    if (side === "north") return [{ from: [dx - half, y, -hl + off], to: [dx + half, y, -hl + off] }];
-    if (side === "south") return [{ from: [dx - half, y, hl - off], to: [dx + half, y, hl - off] }];
-    if (side === "west") return [{ from: [-hw + off, y, dz - half], to: [-hw + off, y, dz + half] }];
-    return [{ from: [hw - off, y, dz - half], to: [hw - off, y, dz + half] }];
   }
 
   const bed = findCategory(objects, "bed");

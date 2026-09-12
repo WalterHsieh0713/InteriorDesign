@@ -2,6 +2,7 @@ import { CatalogItemSchema, type CatalogItem } from "./catalogItem";
 import { GENERATED_ITEMS } from "./catalog.generated";
 import { ACCESSORY_ITEMS } from "./catalog.accessories";
 import { IKEA_ITEMS } from "./catalog.ikea";
+import { IKEA_MODEL_URLS } from "./ikeaModels.generated";
 import { MANUAL_ITEMS } from "./catalog.manual";
 import type { ObjectCategory } from "./roomLayoutSchema";
 
@@ -22,12 +23,73 @@ function merge(): CatalogItem[] {
   for (const item of IKEA_ITEMS) byId.set(item.id, item);
   for (const item of ACCESSORY_ITEMS) byId.set(item.id, item);
   for (const item of MANUAL_ITEMS) byId.set(item.id, item);
+
+  // One field does NOT follow that ranking. A hand-entered row inherited its
+  // mount from whichever stand-in mesh it was paired with, which is how a
+  // floor lamp ended up marked "tabletop". The IKEA importer derives mount
+  // from the product name instead, so where both exist the importer wins on
+  // mount and category while the hand-read dimensions still win on size.
+  for (const fresh of IKEA_ITEMS) {
+    const merged = byId.get(fresh.id);
+    if (merged && merged !== fresh) {
+      byId.set(fresh.id, { ...merged, mount: fresh.mount, category: fresh.category });
+    }
+  }
+
   return [...byId.values()];
+}
+
+/**
+ * Correct mount and category from the product's own name, at load.
+ *
+ * The importer already does this for anything added by URL, but rows that
+ * predate it inherited a mount from whichever stand-in mesh they were paired
+ * with — which is how a 1.55m floor lamp ended up marked "tabletop" and an ALEX
+ * drawer unit ended up filed under desks. Applying the rule here fixes every
+ * row rather than only the ones someone happened to re-import.
+ */
+function correctPlacement(item: CatalogItem): CatalogItem {
+  const n = item.name.toLowerCase();
+  const [w, h, d] = item.dimensions;
+
+  let category = item.category;
+  if (/\blamp\b/.test(n)) category = "lamp";
+  else if (/drawer unit|chest of drawers/.test(n)) category = "dresser";
+  else if (/decoration|ornament|hourglass|figure/.test(n)) category = "other";
+
+  let mount = item.mount;
+  if (/pendant|chandelier|ceiling lamp|hanging lamp/.test(n)) mount = "ceiling";
+  else if (/wall lamp|sconce|wall shelf|wall art|mirror/.test(n)) mount = "wall";
+  else if (/floor lamp|bin\b|trash|hamper|basket/.test(n)) mount = "floor";
+  else if (/table lamp|desk lamp|work lamp/.test(n)) mount = "tabletop";
+  else if (h < 0.45 && w < 0.5 && d < 0.5 && ["other", "plant", "lamp"].includes(category)) {
+    // Small enough to belong on a surface rather than marooned mid-floor.
+    mount = "tabletop";
+  }
+
+  return category === item.category && mount === item.mount ? item : { ...item, category, mount };
+}
+
+/**
+ * Keep only products we can render as themselves.
+ *
+ * An Amazon Berkeley Objects stand-in gets the footprint right and the object
+ * wrong — pick a swivel chair and a plain chair appears. That was acceptable
+ * when it was the only option; now that IKEA's own models cover most of the
+ * catalog, a lookalike beside a real one just looks like a mistake.
+ *
+ * The two Amazon accessories are exempt. They have no model either, but their
+ * procedural shapes were built from the actual product photos to their measured
+ * sizes, so they are that product rather than a near-miss.
+ */
+function rendersAsItself(item: CatalogItem): boolean {
+  if (IKEA_MODEL_URLS[item.id]) return true;
+  return item.styleTags.includes("diffuser") || item.styleTags.includes("projector");
 }
 
 // Validated once at module load. A malformed hand-edit should fail loudly here
 // rather than render as a chair 140 metres wide somewhere deep in the scene.
-export const CATALOG: CatalogItem[] = merge().map((item, i) => {
+export const CATALOG: CatalogItem[] = merge().filter(rendersAsItself).map(correctPlacement).map((item, i) => {
   const parsed = CatalogItemSchema.safeParse(item);
   if (!parsed.success) {
     throw new Error(

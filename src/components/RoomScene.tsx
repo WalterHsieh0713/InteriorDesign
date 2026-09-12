@@ -7,7 +7,7 @@ import * as THREE from "three";
 import type { ItemBinding, RoomLayout } from "@/lib/roomLayoutSchema";
 import { CATALOG_BY_ID, formatPrice } from "@/lib/catalog";
 import { meshForItem, toBinding, toDimensions, type CatalogItem } from "@/lib/catalogItem";
-import { clampToRoom, initialPlacement, mountOf, snapFloorNearWall, snapToWall, supportHeightAt } from "@/lib/placement";
+import { clampToRoom, hangFromCeiling, initialPlacement, mountOf, snapFloorNearWall, snapToWall, supportHeightAt } from "@/lib/placement";
 import { availablePresets, rollFor, runLength, segmentsFor, type LedPreset, type LedPresetId } from "@/lib/ledPresets";
 import { projectionFor } from "@/lib/projection";
 import { buildShoppingList, type LineItem } from "@/lib/shoppingList";
@@ -105,7 +105,7 @@ function WallPanel({
   children,
   ...props
 }: {
-  axis: "x" | "z";
+  axis: "x" | "y" | "z";
   sign: 1 | -1;
   limit: number;
   children: ReactNode;
@@ -286,6 +286,25 @@ function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedC
           roughness={floorPhoto ? 0.75 : floorRoughness}
         />
       </mesh>
+      {/* A ceiling, so a pendant has something to hang from. It hides while the
+          camera is above it, which is nearly always — the same rule the walls
+          follow, and the reason you can still see into the room at all. */}
+      <WallPanel
+        axis="y"
+        sign={1}
+        limit={height}
+        position={[0, height, 0]}
+        rotation={[Math.PI / 2, 0, 0]}
+      >
+        <planeGeometry args={[width, length]} />
+        <meshStandardMaterial
+          color={room.ceilingColor ?? "#e8e6e2"}
+          side={THREE.DoubleSide}
+          roughness={0.97}
+          transparent
+          opacity={wallOpacity}
+        />
+      </WallPanel>
       <WallPanel axis="z" sign={-1} limit={length / 2} position={[0, height / 2, -length / 2]}>
         <planeGeometry args={[width, height]} />
         {wallMaterial(backWallPhoto)}
@@ -430,6 +449,7 @@ function Scene({
   objects,
   cameras,
   selectedId,
+  lightsOn,
   snapEnabled,
   controlsRef,
   onSelect,
@@ -440,6 +460,7 @@ function Scene({
   objects: RoomLayout["objects"];
   cameras: PreparedCamera[];
   selectedId: string | null;
+  lightsOn: boolean;
   snapEnabled: boolean;
   controlsRef: React.MutableRefObject<{ dollyIn?: (s: number) => void; dollyOut?: (s: number) => void; update?: () => void } | null>;
   onSelect: (id: string | null) => void;
@@ -488,6 +509,8 @@ function Scene({
           n,
           new THREE.Vector3(snap.position[0], snap.position[1], snap.position[2])
         );
+      } else if (obj && mount === "ceiling") {
+        dragPlane.current.set(new THREE.Vector3(0, 1, 0), -(layout.room.height - obj.dimensions[1] / 2));
       } else {
         dragPlane.current.set(new THREE.Vector3(0, 1, 0), -y);
       }
@@ -537,6 +560,9 @@ function Scene({
           )
         );
         return;
+      } else if (mount === "ceiling") {
+        // Free over the floor, fixed to the ceiling.
+        next = hangFromCeiling(dragged, x, z, layout.room);
       } else if (mount === "tabletop") {
         // Rest on whatever is underneath: a desk lamp rises onto a tall
         // nightstand and drops onto a lower desk without anyone typing a height.
@@ -590,18 +616,20 @@ function Scene({
           of crashed/lost WebGL contexts on mobile GPUs, which is exactly
           what "renders fine, then goes black" looks like. Canvas's default
           `shadows` prop still gives cheap PCF shadows. */}
-      <EnvironmentBoundary>
+      {lightsOn && (<EnvironmentBoundary>
         <Suspense fallback={null}>
           <Environment preset="apartment" />
         </Suspense>
-      </EnvironmentBoundary>
+      </EnvironmentBoundary>)}
       {/* Tinted by the room's own estimated light color (warm bulb vs.
           daylight) instead of flat white — an incandescent-lit room and a
           daylit one shouldn't come out looking identically lit. */}
-      <ambientLight intensity={0.25} color={lightColor} />
+      {/* Only the room's own daylight dims. Lamps, LED runs and a diffuser
+          keep their output, which is the whole point of the switch. */}
+      <ambientLight intensity={lightsOn ? 0.25 : 0.03} color={lightColor} />
       <directionalLight
         position={[layout.room.width, layout.room.height * 3, layout.room.length]}
-        intensity={1.7}
+        intensity={lightsOn ? 1.7 : 0.08}
         color={lightColor}
         castShadow
         shadow-mapSize={[1024, 1024]}
@@ -617,7 +645,7 @@ function Scene({
           closer to how the room actually looks than one hard sun. */}
       <directionalLight
         position={[-layout.room.width, layout.room.height * 1.2, -layout.room.length]}
-        intensity={0.45}
+        intensity={lightsOn ? 0.45 : 0.03}
         color={lightColor}
       />
       {/* Clicking past every object clears the selection. It sits behind the
@@ -705,6 +733,7 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [snapshotting, setSnapshotting] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
+  const [lightsOn, setLightsOn] = useState(true);
   const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
   const [roomPanelOpen, setRoomPanelOpen] = useState(false);
   const controlsRef = useRef<{ dollyIn?: (s: number) => void; dollyOut?: (s: number) => void; update?: () => void } | null>(null);
@@ -1184,6 +1213,7 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           objects={layout.objects}
           cameras={cameras}
           selectedId={selectedId}
+          lightsOn={lightsOn}
           snapEnabled={snapEnabled}
           controlsRef={controlsRef}
           onSelect={setSelectedId}
@@ -1195,7 +1225,7 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
       {/* Bottom action bar. Rotate and delete act on the selection, so they
           stay disabled until there is one rather than disappearing — a
           control that vanishes is harder to find the second time. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center pl-4 pr-20">
+      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center pl-4 pr-24">
         {/* One row, always. When the viewport is too narrow for every control
             the bar scrolls sideways rather than wrapping into a second row that
             covers the room. */}
@@ -1253,6 +1283,14 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
             }
           >
             Edge snap
+          </button>
+          <button
+            onClick={() => setLightsOn((v) => !v)}
+            aria-pressed={!lightsOn}
+            title="Turn the room lights off to see lamps, LED runs and the projector"
+            className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+          >
+            {lightsOn ? "Lights off" : "Lights on"}
           </button>
           <button onClick={() => zoom(true)} title="Zoom in" className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10">+</button>
           <button onClick={() => zoom(false)} title="Zoom out" className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10">−</button>
