@@ -1,0 +1,35 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "tiny-text",
+        "value": "*",
+        "files": [
+          "index.html"
+        ],
+        "createdAt": "2026-09-12T19:17:55.400Z",
+        "reason": "user specified exact px values in the build brief (.foot 12px, .eyebrow/.foot 11px at <=420px, .boot p 12.5px); these are editorial caption/meter sizes, not body copy"
+      },
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "index.html"
+        ],
+        "createdAt": "2026-09-12T19:19:14.045Z",
+        "reason": "brief pins the palette verbatim: 'Keep the light, off-white editorial look: paper #f2f0ec, near-black ink #0d0c0b'. Impeccable's own rule is that a pinned brief outranks a saturated-pattern warning."
+      },
+      {
+        "rule": "buried-raster",
+        "value": "*",
+        "files": [
+          "index.html"
+        ],
+        "createdAt": "2026-09-12T19:19:16.965Z",
+        "reason": "no raster is buried: .grain is procedural SVG noise at .13 with mix-blend-mode:multiply (visible anti-banding, not a compliance token), and the wash it sits over is a scrubbed video that is the page's entire subject. Veil alphas are specified in the brief and drop to .12 across the middle 22-78% precisely so the footage reads."
+      }
+    ]
+  }
+}
