@@ -6,31 +6,13 @@ enum RoomExporter {
 
     // MARK: - CapturedRoom -> RoomLayoutJSON
 
-    static func buildLayout(from room: CapturedRoom) -> RoomLayoutJSON {
+    /// Returns the layout plus a human-readable diagnostic summary. The
+    /// summary is shown in the app itself rather than logged, because
+    /// scanning means walking around the room — which means unplugging from
+    /// the Mac, which kills the debug session and takes `print` output with
+    /// it. Temporary; drop it once the coordinate frame is settled.
+    static func buildLayout(from room: CapturedRoom) -> (layout: RoomLayoutJSON, diagnostics: String) {
         let frame = alignmentFrame(for: room.walls)
-
-        // Temporary diagnostics — uploaded layouts were still landing
-        // off-center and below the floor after the alignment fix, and the
-        // stored JSON alone can't distinguish "frame computed wrong" from
-        // "frame never applied". Remove once that's settled.
-        print("""
-        [RoomExporter] walls=\(room.walls.count) objects=\(room.objects.count)
-          yaw=\(frame.yaw) center=(\(frame.centerX), \(frame.centerZ)) floorY=\(frame.floorY)
-          size=\(frame.width) x \(frame.length) x \(frame.height)
-        """)
-        if let sample = room.objects.first {
-            let t = sample.transform.columns.3
-            let placed = place(sample.transform, in: frame)
-            print("""
-            [RoomExporter] sample \(sample.category)
-              raw=(\(t.x), \(t.y), \(t.z)) dims=\(sample.dimensions)
-              placed=\(placed.position) base_y=\(placed.position[1] - sample.dimensions.y / 2)
-            """)
-        }
-        if let wall = room.walls.first {
-            let t = wall.transform.columns.3
-            print("[RoomExporter] sample wall center_y=\(t.y) height=\(wall.dimensions.y)")
-        }
 
         var objects = room.objects.map { objectJSON(from: $0, in: frame) }
         objects += room.doors.map { surfaceJSON(from: $0, category: "door", in: frame) }
@@ -38,10 +20,32 @@ enum RoomExporter {
         // walls and openings intentionally excluded — walls define the room
         // box itself, and the schema has no category for either.
 
-        return RoomLayoutJSON(
+        let layout = RoomLayoutJSON(
             room: RoomDimensionsJSON(width: frame.width, length: frame.length, height: frame.height),
             objects: objects
         )
+
+        var lines: [String] = []
+        func f(_ v: Float) -> String { String(format: "%.2f", v) }
+
+        lines.append("walls=\(room.walls.count) objects=\(room.objects.count) doors=\(room.doors.count) windows=\(room.windows.count)")
+        lines.append("yaw=\(f(frame.yaw)) center=(\(f(frame.centerX)), \(f(frame.centerZ))) floorY=\(f(frame.floorY))")
+        lines.append("size=\(f(frame.width)) x \(f(frame.length)) x \(f(frame.height))")
+
+        if let wall = room.walls.first {
+            lines.append("wall[0] center_y=\(f(wall.transform.columns.3.y)) height=\(f(wall.dimensions.y))")
+        }
+        if let sample = room.objects.first {
+            let t = sample.transform.columns.3
+            let placed = place(sample.transform, in: frame)
+            lines.append("obj[0] raw=(\(f(t.x)), \(f(t.y)), \(f(t.z)))")
+            lines.append("obj[0] placed=(\(f(placed.position[0])), \(f(placed.position[1])), \(f(placed.position[2])))")
+            lines.append("obj[0] h=\(f(sample.dimensions.y)) base_y=\(f(placed.position[1] - sample.dimensions.y / 2))")
+        }
+
+        let diagnostics = lines.joined(separator: "\n")
+        print("[RoomExporter]\n" + diagnostics)
+        return (layout, diagnostics)
     }
 
     // MARK: - Alignment

@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var shareURL: URL?
     @State private var errorMessage: String?
     @State private var isUploading = false
+    @State private var diagnostics: String?
 
     /// RoomCaptureSession.isSupported is false on any device without a LiDAR
     /// scanner (and always false in the Simulator).
@@ -47,6 +48,19 @@ struct ContentView: View {
                     .font(.footnote)
                     .multilineTextAlignment(.center)
             }
+
+            if let diagnostics {
+                ScrollView {
+                    Text(diagnostics)
+                        .font(.system(.caption2, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 220)
+                .padding(8)
+                .background(Color.gray.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
         }
         .padding()
         .fullScreenCover(isPresented: $showScanner) {
@@ -73,7 +87,8 @@ struct ContentView: View {
 
         Task {
             do {
-                let layout = RoomExporter.buildLayout(from: room)
+                let (layout, debugSummary) = RoomExporter.buildLayout(from: room)
+                await MainActor.run { diagnostics = debugSummary }
                 let session = UUID().uuidString
                 try await LayoutUploader.upload(layout, session: session)
                 let url = LayoutUploader.shareableRoomURL(session: session)
