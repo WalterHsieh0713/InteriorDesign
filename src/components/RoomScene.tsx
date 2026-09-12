@@ -166,6 +166,26 @@ function Scene({
   );
 }
 
+// `position` is an object's center and `dimensions[1]` its full height, so
+// anything resting on the floor should sit at y = height/2. Both capture
+// paths get this wrong sometimes (Gemini guesses it, RoomPlan's floor
+// estimate can drift), which renders furniture sunk through the floor. Lift
+// anything whose base is below zero; leave anything legitimately higher
+// (wall-mounted TVs, a lamp on a desk) exactly where it was reported.
+function restOnFloor(layout: RoomLayout): RoomLayout {
+  return {
+    ...layout,
+    objects: layout.objects.map((obj) => {
+      const minCenterY = obj.dimensions[1] / 2;
+      if (obj.position[1] >= minCenterY) return obj;
+      return {
+        ...obj,
+        position: [obj.position[0], minCenterY, obj.position[2]] as [number, number, number],
+      };
+    }),
+  };
+}
+
 export default function RoomScene({ sessionId }: { sessionId: string }) {
   const [layout, setLayout] = useState<RoomLayout | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -178,7 +198,7 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
         const res = await fetch(`/api/layout?session=${sessionId}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to load layout");
-        if (!cancelled) setLayout(data);
+        if (!cancelled) setLayout(restOnFloor(data));
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load layout");
       }
