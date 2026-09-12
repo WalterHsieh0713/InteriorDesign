@@ -145,5 +145,648 @@ export const IKEA_ITEMS: CatalogItem[] = [
       "depth"
     ],
     "verified": true
+  },
+  {
+    "id": "ikea-70637304",
+    "name": "KALLAX Shelf unit",
+    "brand": "IKEA",
+    "category": "shelf",
+    "priceCents": 4999,
+    "productUrl": "https://www.ikea.com/us/en/p/kallax-shelf-unit-black-brown-70637304/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/kallax-shelf-unit-black-brown__0644756_pe702940_s5.jpg",
+    "dimensions": [
+      0.765,
+      0.765,
+      0.403
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#C9C6BE",
+    "styleTags": [
+      "shelf",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-10346765",
+    "name": "PERSILLADE Plant pot",
+    "brand": "IKEA",
+    "category": "plant",
+    "priceCents": 2999,
+    "productUrl": "https://www.ikea.com/us/en/p/persillade-plant-pot-dark-gray-10346765/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/persillade-plant-pot-dark-gray__0439713_pe592235_s5.jpg",
+    "dimensions": [
+      0.274,
+      0.261,
+      0.275
+    ],
+    "modelId": null,
+    "mount": "tabletop",
+    "dominantHex": "#8A8D8F",
+    "styleTags": [
+      "plant",
+      "gray",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-00604948",
+    "name": "BLOMPRAKT Bluetooth speaker lamp",
+    "brand": "IKEA",
+    "category": "lamp",
+    "priceCents": 5999,
+    "productUrl": "https://www.ikea.com/us/en/p/blomprakt-bluetooth-speaker-lamp-beige-00604948/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/blomprakt-bluetooth-speaker-lamp-beige__1452973_pe991265_s5.jpg",
+    "dimensions": [
+      0.22,
+      0.224,
+      0.206
+    ],
+    "modelId": null,
+    "mount": "tabletop",
+    "dominantHex": "#C9C6BE",
+    "styleTags": [
+      "lamp",
+      "beige",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-80593597",
+    "name": "RÅDMANSÖ Nightstand",
+    "brand": "IKEA",
+    "category": "nightstand",
+    "priceCents": 9999,
+    "productUrl": "https://www.ikea.com/us/en/p/radmansoe-nightstand-brown-walnut-effect-80593597/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/radmansoe-nightstand-brown-walnut-effect__1384141_pe962860_s5.jpg",
+    "dimensions": [
+      0.541,
+      0.579,
+      0.384
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#C9C6BE",
+    "styleTags": [
+      "nightstand",
+      "brown",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-70507604",
+    "name": "HUVUDSPELARE Gaming chair",
+    "brand": "IKEA",
+    "category": "chair",
+    "priceCents": 8999,
+    "productUrl": "https://www.ikea.com/us/en/p/huvudspelare-gaming-chair-black-70507604/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/huvudspelare-gaming-chair-black__1039672_pe840417_s5.jpg",
+    "dimensions": [
+      0.647,
+      1.13,
+      0.615
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#2B2B2D",
+    "styleTags": [
+      "chair",
+      "black",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-00467526",
+    "name": "TVÄRFOT Table lamp",
+    "brand": "IKEA",
+    "category": "lamp",
+    "priceCents": 1499,
+    "productUrl": "https://www.ikea.com/us/en/p/tvaerfot-table-lamp-black-white-00467526/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/tvaerfot-table-lamp-black-white__0772757_pe756087_s5.jpg",
+    "dimensions": [
+      0.151,
+      0.224,
+      0.151
+    ],
+    "modelId": null,
+    "mount": "tabletop",
+    "dominantHex": "#F2F2F0",
+    "styleTags": [
+      "lamp",
+      "black, white",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-50420206",
+    "name": "HÅLLBAR Bin with lid",
+    "brand": "IKEA",
+    "category": "other",
+    "priceCents": 1999,
+    "productUrl": "https://www.ikea.com/us/en/p/hallbar-bin-with-lid-light-gray-50420206/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/hallbar-bin-with-lid-light-gray__0742729_pe742786_s5.jpg",
+    "dimensions": [
+      0.251,
+      0.549,
+      0.39
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#8A8D8F",
+    "styleTags": [
+      "other",
+      "gray",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-90514095",
+    "name": "KNÖCKLA Step trash can",
+    "brand": "IKEA",
+    "category": "other",
+    "priceCents": 3799,
+    "productUrl": "https://www.ikea.com/us/en/p/knoeckla-step-trash-can-dark-gray-90514095/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/knoeckla-step-trash-can-dark-gray__1029078_pe835653_s5.jpg",
+    "dimensions": [
+      0.38,
+      0.434,
+      0.282
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#8A8D8F",
+    "styleTags": [
+      "other",
+      "gray",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-10615244",
+    "name": "FEJKA Artificial potted plant",
+    "brand": "IKEA",
+    "category": "plant",
+    "priceCents": 4999,
+    "productUrl": "https://www.ikea.com/us/en/p/fejka-artificial-potted-plant-indoor-outdoor-monstera-10615244/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/fejka-artificial-potted-plant-indoor-outdoor-monstera__0614197_pe686822_s5.jpg",
+    "dimensions": [
+      0.695,
+      0.963,
+      0.743
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#4A5D4E",
+    "styleTags": [
+      "plant",
+      "green",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-60619942",
+    "name": "IKEA PS 2026 Nightstand",
+    "brand": "IKEA",
+    "category": "nightstand",
+    "priceCents": 6999,
+    "productUrl": "https://www.ikea.com/us/en/p/ikea-ps-2026-nightstand-pine-with-flip-down-door-60619942/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/ikea-ps-2026-nightstand-pine-with-flip-down-door__1472079_pe997449_s5.jpg",
+    "dimensions": [
+      0.302,
+      0.505,
+      0.302
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#C9C6BE",
+    "styleTags": [
+      "nightstand",
+      "beige",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-60359996",
+    "name": "ODGER Chair",
+    "brand": "IKEA",
+    "category": "chair",
+    "priceCents": 12500,
+    "productUrl": "https://www.ikea.com/us/en/p/odger-chair-white-beige-60359996/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/odger-chair-white-beige__0727334_pe735606_s5.jpg",
+    "dimensions": [
+      0.451,
+      0.797,
+      0.513
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#F2F2F0",
+    "styleTags": [
+      "chair",
+      "beige, white",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-80104268",
+    "name": "LACK Side table",
+    "brand": "IKEA",
+    "category": "table",
+    "priceCents": 1699,
+    "productUrl": "https://www.ikea.com/us/en/p/lack-side-table-black-brown-80104268/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/lack-side-table-black-brown__57544_pe163126_s5.jpg",
+    "dimensions": [
+      0.551,
+      0.451,
+      0.551
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#2B2B2D",
+    "styleTags": [
+      "table",
+      "brown, black",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-40369109",
+    "name": "NORDVIKEN Chair",
+    "brand": "IKEA",
+    "category": "chair",
+    "priceCents": 6500,
+    "productUrl": "https://www.ikea.com/us/en/p/nordviken-chair-black-40369109/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/nordviken-chair-black__0714202_pe729964_s5.jpg",
+    "dimensions": [
+      0.44,
+      0.971,
+      0.539
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#2B2B2D",
+    "styleTags": [
+      "chair",
+      "black",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-80574240",
+    "name": "YTLÄGE Pendant lamp",
+    "brand": "IKEA",
+    "category": "lamp",
+    "priceCents": 3999,
+    "productUrl": "https://www.ikea.com/us/en/p/ytlaege-pendant-lamp-white-80574240/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/ytlaege-pendant-lamp-white__1248107_pe923610_s5.jpg",
+    "dimensions": [
+      0.779,
+      1.365,
+      0.779
+    ],
+    "modelId": null,
+    "mount": "ceiling",
+    "dominantHex": "#F2F2F0",
+    "styleTags": [
+      "lamp",
+      "white",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-40530917",
+    "name": "OLSERÖD Side table",
+    "brand": "IKEA",
+    "category": "table",
+    "priceCents": 4999,
+    "productUrl": "https://www.ikea.com/us/en/p/olseroed-side-table-anthracite-dark-gray-40530917/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/olseroed-side-table-anthracite-dark-gray__1150823_pe884681_s5.jpg",
+    "dimensions": [
+      0.506,
+      0.626,
+      0.526
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#8A8D8F",
+    "styleTags": [
+      "table",
+      "gray",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-20618497",
+    "name": "LILLESÄTER Sofa",
+    "brand": "IKEA",
+    "category": "sofa",
+    "priceCents": 99900,
+    "productUrl": "https://www.ikea.com/us/en/p/lillesaeter-sofa-gunnared-bright-green-yellow-20618497/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/lillesaeter-sofa-gunnared-bright-green-yellow__1515332_pe1011364_s5.jpg",
+    "dimensions": [
+      2.017,
+      0.697,
+      0.902
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#C9C6BE",
+    "styleTags": [
+      "sofa",
+      "yellow",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-50561244",
+    "name": "STORKLINTA 6-drawer dresser",
+    "brand": "IKEA",
+    "category": "dresser",
+    "priceCents": 27999,
+    "productUrl": "https://www.ikea.com/us/en/p/storklinta-6-drawer-dresser-dark-brown-oak-effect-anchor-unlock-function-50561244/#content",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/storklinta-6-drawer-dresser-dark-brown-oak-effect-anchor-unlock-function__1522381_pe1013611_s5.jpg",
+    "dimensions": [
+      1.398,
+      0.754,
+      0.478
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#C9C6BE",
+    "styleTags": [
+      "dresser",
+      "brown",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-20578585",
+    "name": "HARVMATTA Letter tray",
+    "brand": "IKEA",
+    "category": "other",
+    "priceCents": 2999,
+    "productUrl": "https://www.ikea.com/us/en/p/harvmatta-letter-tray-anthracite-20578585/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/harvmatta-letter-tray-anthracite__1272583_pe929722_s5.jpg",
+    "dimensions": [
+      0.32,
+      0.321,
+      0.251
+    ],
+    "modelId": null,
+    "mount": "tabletop",
+    "dominantHex": "#8A8D8F",
+    "styleTags": [
+      "other",
+      "gray",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-80621939",
+    "name": "SNÖRPTRÅD LED table decoration",
+    "brand": "IKEA",
+    "category": "other",
+    "priceCents": 999,
+    "productUrl": "https://www.ikea.com/us/en/p/snoerptrad-led-table-decoration-battery-operated-brass-color-80621939/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/snoerptrad-led-table-decoration-battery-operated-brass-color__1495289_pe1005010_s5.jpg",
+    "dimensions": [
+      0.095,
+      0.08,
+      0.095
+    ],
+    "modelId": null,
+    "mount": "tabletop",
+    "dominantHex": "#C9C6BE",
+    "styleTags": [
+      "other",
+      "yellow",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-50533736",
+    "name": "FÅLSKÄR Coffee table, outdoor",
+    "brand": "IKEA",
+    "category": "table",
+    "priceCents": 11999,
+    "productUrl": "https://www.ikea.com/us/en/p/falskaer-coffee-table-outdoor-brown-50533736/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/falskaer-coffee-table-outdoor-brown__1205155_pe906956_s5.jpg",
+    "dimensions": [
+      0.55,
+      0.416,
+      0.55
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#C9C6BE",
+    "styleTags": [
+      "table",
+      "brown",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-60511362",
+    "name": "LÅNESPELARE Accessories stand",
+    "brand": "IKEA",
+    "category": "other",
+    "priceCents": 3499,
+    "productUrl": "https://www.ikea.com/us/en/p/lanespelare-accessories-stand-60511362/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/lanespelare-accessories-stand__0974868_pe812565_s5.jpg",
+    "dimensions": [
+      0.121,
+      0.342,
+      0.125
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#C9C6BE",
+    "styleTags": [
+      "other",
+      "beige",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-40255462",
+    "name": "GESTALTA Artist's figure",
+    "brand": "IKEA",
+    "category": "other",
+    "priceCents": 1299,
+    "productUrl": "https://www.ikea.com/us/en/p/gestalta-artists-figure-natural-40255462/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/gestalta-artists-figure-natural__24799_pe109573_s5.jpg",
+    "dimensions": [
+      0.102,
+      0.333,
+      0.15
+    ],
+    "modelId": null,
+    "mount": "tabletop",
+    "dominantHex": "#C9C6BE",
+    "styleTags": [
+      "other",
+      "beige",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-00482635",
+    "name": "ÄLSKVÄRD Bassinet with sleeping pad",
+    "brand": "IKEA",
+    "category": "other",
+    "priceCents": 19999,
+    "productUrl": "https://www.ikea.com/us/en/p/aelskvaerd-bassinet-with-sleeping-pad-birch-00482635/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/aelskvaerd-bassinet-with-sleeping-pad-birch__1054794_pe847842_s5.jpg",
+    "dimensions": [
+      0.829,
+      0.786,
+      0.697
+    ],
+    "modelId": null,
+    "mount": "floor",
+    "dominantHex": "#C9C6BE",
+    "styleTags": [
+      "other",
+      "beige",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
   }
 ];

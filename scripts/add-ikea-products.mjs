@@ -26,20 +26,28 @@ const CACHE = join(tmpdir(), "ikea-glb-cache");
 // Words in a product's name that place it in our enum. First match wins, so
 // order matters: "drawer unit" before "unit", "coffee table" before "table".
 const CATEGORY_WORDS = [
-  ["bookcase", "shelf"], ["shelf", "shelf"], ["shelving", "shelf"],
+  // Lighting first. "TVÄRFOT Table lamp" contains "table", and a lamp filed
+  // under tables is the kind of thing nobody notices until it is in the demo.
+  ["floor lamp", "lamp"], ["table lamp", "lamp"], ["work lamp", "lamp"],
+  ["pendant lamp", "lamp"], ["wall lamp", "lamp"], ["lamp", "lamp"],
+  // Likewise "LED table decoration" is a trinket, not a table.
+  ["decoration", "other"], ["ornament", "other"], ["hourglass", "other"],
+
+  ["bookcase", "shelf"], ["bookshelf", "shelf"], ["shelf", "shelf"], ["shelving", "shelf"],
   ["drawer unit", "dresser"], ["chest of drawers", "dresser"], ["dresser", "dresser"],
   ["nightstand", "nightstand"], ["bedside", "nightstand"],
   ["bed frame", "bed"], ["headboard", "bed"],
   ["desk", "desk"], ["workstation", "desk"],
-  ["coffee table", "table"], ["side table", "table"], ["console table", "table"], ["table", "table"],
-  ["armchair", "chair"], ["office chair", "chair"], ["swivel chair", "chair"], ["chair", "chair"],
+  ["coffee table", "table"], ["side table", "table"], ["console table", "table"],
+  ["dining table", "table"], ["table", "table"],
+  ["armchair", "chair"], ["office chair", "chair"], ["swivel chair", "chair"],
+  ["gaming chair", "chair"], ["chair", "chair"],
   ["loveseat", "sofa"], ["sofa", "sofa"], ["sleeper", "sofa"],
   ["ottoman", "ottoman"], ["footstool", "ottoman"],
   ["stool", "stool"], ["bench", "stool"],
-  ["floor lamp", "lamp"], ["table lamp", "lamp"], ["work lamp", "lamp"], ["lamp", "lamp"],
   ["mirror", "mirror"],
   ["rug", "rug"], ["carpet", "rug"],
-  ["plant", "plant"], ["vase", "plant"],
+  ["plant", "plant"], ["plant pot", "plant"], ["vase", "plant"],
 ];
 
 // A pendant hangs from the ceiling, a sconce sits on a wall, a floor lamp
@@ -67,11 +75,21 @@ function categoryFor(name, override) {
  * a floor lamp are all "lamp" and belong on three different surfaces. A pendant
  * left on the floor is the giveaway that nobody checked.
  */
-function mountFor(category, name) {
+function mountFor(category, name, dims) {
   if (CEILING_WORDS.test(name)) return "ceiling";
   if (WALL_WORDS.test(name)) return "wall";
   if (/table lamp|desk lamp|work lamp/i.test(name)) return "tabletop";
-  return MOUNT[category] ?? "floor";
+  if (MOUNT[category]) return MOUNT[category];
+
+  // Small objects belong on a surface, not marooned in the middle of the
+  // floor: a letter tray, a diffuser, a desk trinket. Anything that stands on
+  // its own — a floor lamp, a bin — is taller than this.
+  const [w, h, d] = dims;
+  const small = h < 0.45 && w < 0.5 && d < 0.5;
+  const standsAlone = /floor lamp|bin|trash|basket|hamper|stand$/i.test(name);
+  if (small && !standsAlone && ["other", "plant", "lamp"].includes(category)) return "tabletop";
+
+  return "floor";
 }
 
 function hexFor(color, name) {
@@ -176,7 +194,7 @@ for (const { url, category: override } of lines) {
       dimensions: dims,
       // The IKEA model is used unscaled, so modelId (the ABO stand-in) is null.
       modelId: null,
-      mount: mountFor(cat, p.name),
+      mount: mountFor(cat, p.name, dims),
       dominantHex: hexFor(p.color, p.name),
       styleTags: [cat, p.color, "ikea"].filter(Boolean).map((s) => String(s).toLowerCase()),
       // Measured off IKEA's own mesh, which is the product. Not a transcription.
