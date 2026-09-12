@@ -7,7 +7,7 @@ import * as THREE from "three";
 import type { ItemBinding, RoomLayout } from "@/lib/roomLayoutSchema";
 import { CATALOG_BY_ID, formatPrice } from "@/lib/catalog";
 import { modelUrlFor, toBinding, toDimensions, type CatalogItem } from "@/lib/catalogItem";
-import { initialPlacement, mountOf, snapFloorNearWall, snapToWall, supportHeightAt } from "@/lib/placement";
+import { clampToRoom, initialPlacement, mountOf, snapFloorNearWall, snapToWall, supportHeightAt } from "@/lib/placement";
 import { availablePresets, rollFor, runLength, segmentsFor, type LedPreset, type LedPresetId } from "@/lib/ledPresets";
 import { projectionFor } from "@/lib/projection";
 import { buildShoppingList, type LineItem } from "@/lib/shoppingList";
@@ -20,6 +20,8 @@ import LedStrips from "./LedStrips";
 import AccessoryMesh, { ProjectionScreen, accessoryKind } from "./AccessoryMesh";
 import ShoppingList from "./ShoppingList";
 import WallFeatures from "./WallFeatures";
+import MirrorMesh from "./MirrorMesh";
+import RoomPanel from "./RoomPanel";
 import { getTexture, type TextureKind } from "./textures";
 import { prepareCameras, bakePlaneTexture, type PreparedCamera } from "./projectiveTexture";
 
@@ -349,7 +351,9 @@ function DraggableObject({
         onDragStart(obj.id, obj.position[1], e);
       }}
     >
-      {accessory ? (
+      {obj.category === "mirror" ? (
+        <MirrorMesh dimensions={obj.dimensions} selected={isSelected} />
+      ) : accessory ? (
         <AccessoryMesh
           kind={accessory}
           dimensions={obj.dimensions}
@@ -533,14 +537,16 @@ function Scene({
       } else if (mount === "tabletop") {
         // Rest on whatever is underneath: a desk lamp rises onto a tall
         // nightstand and drops onto a lower desk without anyone typing a height.
-        const support = supportHeightAt(dragged, x, z, latest.current);
-        next = [x, support + dragged.dimensions[1] / 2, z];
+        const [cx, cz] = clampToRoom(dragged, x, z, layout.room);
+        const support = supportHeightAt(dragged, cx, cz, latest.current);
+        next = [cx, support + dragged.dimensions[1] / 2, cz];
       } else {
         // Furniture in a real dorm lives against a wall, and getting something
         // exactly flush by hand in a 3D view is fiddly. Snapping is a toggle
         // because sometimes you do want a rug floating in the middle.
         const snapped = snapEnabled ? snapFloorNearWall(dragged, x, z, layout.room) : null;
-        next = snapped ? snapped.position : [x, dragPlaneY.current, z];
+        const [cx, cz] = clampToRoom(dragged, x, z, layout.room);
+        next = snapped ? snapped.position : [cx, dragPlaneY.current, cz];
         if (snapped) {
           onObjectsChange(
             latest.current.map((o) =>
@@ -695,6 +701,7 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
   const [snapshotting, setSnapshotting] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
+  const [roomPanelOpen, setRoomPanelOpen] = useState(false);
   const controlsRef = useRef<{ dollyIn?: (s: number) => void; dollyOut?: (s: number) => void; update?: () => void } | null>(null);
   const glRef = useRef<THREE.WebGLRenderer | null>(null);
 
@@ -963,6 +970,14 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
     c.update?.();
   }, []);
 
+  const handleRoomChange = useCallback(
+    (next: RoomLayout["room"]) => {
+      const current = layoutRef.current;
+      if (current) void persist({ ...current, room: next });
+    },
+    [persist]
+  );
+
   const handleSnapshot = useCallback(() => {
     const renderer = glRef.current;
     if (!renderer) return;
@@ -1038,6 +1053,15 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           </div>
         )}
         {saving && <div className="text-gray-400">Saving…</div>}
+        {/* Room shape lives with the room readout, not inside the furniture
+            catalog — it is a property of the scan, not something you add. */}
+        <button
+          onClick={() => setRoomPanelOpen((v) => !v)}
+          aria-expanded={roomPanelOpen}
+          className="mt-2 w-full rounded border border-black/10 px-2 py-1 text-[11px] text-neutral-600 hover:bg-black/5 dark:border-white/15 dark:text-neutral-300 dark:hover:bg-white/10"
+        >
+          {roomPanelOpen ? "Close room settings" : "Room settings"}
+        </button>
       </div>
       <Canvas
         key={canvasKey}
@@ -1082,7 +1106,10 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           stay disabled until there is one rather than disappearing — a
           control that vanishes is harder to find the second time. */}
       <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center px-4">
-        <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-full bg-white/95 p-1.5 shadow-lg backdrop-blur dark:bg-neutral-900/95">
+        {/* One row, always. When the viewport is too narrow for every control
+            the bar scrolls sideways rather than wrapping into a second row that
+            covers the room. */}
+        <div className="pointer-events-auto flex max-w-full flex-nowrap items-center gap-1 overflow-x-auto rounded-full bg-white/95 p-1.5 shadow-lg backdrop-blur [scrollbar-width:none] dark:bg-neutral-900/95">
           <button
             onClick={() => setCatalogOpen((v) => !v)}
             className="rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -1194,6 +1221,14 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
             </div>
           </div>
         </div>
+      )}
+
+      {roomPanelOpen && (
+        <RoomPanel
+          room={layout.room}
+          onRoomChange={handleRoomChange}
+          onClose={() => setRoomPanelOpen(false)}
+        />
       )}
 
       <CatalogPanel

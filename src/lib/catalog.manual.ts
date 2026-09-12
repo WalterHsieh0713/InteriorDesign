@@ -499,7 +499,7 @@ export const MANUAL_ITEMS: CatalogItem[] = [
     "dimensions": [
       0.359,
       0.699,
-      0.548
+      0.581
     ],
     "modelId": "abo-b07qd6v1vt",
     "mount": "floor",
@@ -511,9 +511,10 @@ export const MANUAL_ITEMS: CatalogItem[] = [
     ],
     "measuredAxes": [
       "width",
-      "height"
+      "height",
+      "depth"
     ],
-    "verified": false
+    "verified": true
   },
   {
     "id": "ikea-s49480188",
@@ -560,15 +561,16 @@ export const MANUAL_ITEMS: CatalogItem[] = [
     ],
     "dimensions": [
       0.73,
-      0.762,
+      0.749,
       0.498
     ],
     "modelId": "abo-b07qd6v1vt",
     "measuredAxes": [
       "width",
+      "height",
       "depth"
     ],
-    "verified": false
+    "verified": true
   },
   {
     "id": "ikea-s09291378",
@@ -587,15 +589,16 @@ export const MANUAL_ITEMS: CatalogItem[] = [
     ],
     "dimensions": [
       1,
-      0.737,
+      0.749,
       1.419
     ],
     "modelId": "abo-b075x41rld",
     "measuredAxes": [
       "width",
+      "height",
       "depth"
     ],
-    "verified": false
+    "verified": true
   },
   {
     "id": "ikea-30484075",
@@ -615,14 +618,15 @@ export const MANUAL_ITEMS: CatalogItem[] = [
     "dimensions": [
       0.359,
       1.159,
-      0.413
+      0.581
     ],
     "modelId": "abo-b07hsh4zr2",
     "measuredAxes": [
       "width",
-      "height"
+      "height",
+      "depth"
     ],
-    "verified": false
+    "verified": true
   },
   {
     "id": "ikea-40473547",
@@ -669,14 +673,15 @@ export const MANUAL_ITEMS: CatalogItem[] = [
     "dimensions": [
       0.359,
       0.699,
-      0.413
+      0.581
     ],
     "modelId": "abo-b07hsh4zr2",
     "measuredAxes": [
       "width",
-      "height"
+      "height",
+      "depth"
     ],
-    "verified": false
+    "verified": true
   },
   {
     "id": "ikea-90301225",
@@ -732,5 +737,144 @@ export const MANUAL_ITEMS: CatalogItem[] = [
       "height"
     ],
     "verified": false
+  },
+  {
+    "id": "ikea-09574367",
+    "name": "MALM Bed frame, Twin",
+    "brand": "IKEA",
+    "category": "bed",
+    "priceCents": 24900,
+    "productUrl": "https://www.ikea.com/us/en/p/malm-bed-frame-dark-brown-veneer-s09574367/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/malm-bed-frame-dark-brown-veneer__1364772_pe956028_s5.jpg",
+    "dimensions": [
+      1.121,
+      1,
+      1.991
+    ],
+    "modelId": "abo-b07b4z6pyt",
+    "mount": "floor",
+    "dominantHex": "#C9C6BE",
+    "styleTags": [
+      "bed",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-80213074",
+    "name": "MICKE Desk",
+    "brand": "IKEA",
+    "category": "desk",
+    "priceCents": 10999,
+    "productUrl": "https://www.ikea.com/us/en/p/micke-desk-white-80213074/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/micke-desk-white__0736018_pe740345_s5.jpg",
+    "dimensions": [
+      1.051,
+      0.749,
+      0.498
+    ],
+    "modelId": "abo-b07qx2bydh",
+    "mount": "floor",
+    "dominantHex": "#F2F2F0",
+    "styleTags": [
+      "desk",
+      "white",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-90214308",
+    "name": "MICKE Desk",
+    "brand": "IKEA",
+    "category": "desk",
+    "priceCents": 10999,
+    "productUrl": "https://www.ikea.com/us/en/p/micke-desk-white-90214308/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/micke-desk-white__0736020_pe740347_s5.jpg",
+    "dimensions": [
+      1.419,
+      0.749,
+      0.498
+    ],
+    "modelId": "abo-b075zbvzst",
+    "mount": "floor",
+    "dominantHex": "#F2F2F0",
+    "styleTags": [
+      "desk",
+      "white",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-s19175988",
+    "name": "MALM Bed frame, Queen",
+    "brand": "IKEA",
+    "category": "bed",
+    "priceCents": 32900,
+    "productUrl": "https://www.ikea.com/us/en/p/malm-bed-frame-white-s19175988/",
+    "imageUrl": null,
+    "mount": "floor",
+    "dominantHex": "#F2F2F0",
+    "styleTags": [
+      "bed",
+      "white",
+      "ikea"
+    ],
+    "dimensions": [
+      1.68,
+      1,
+      2.111
+    ],
+    "modelId": "abo-b07b4z6pyt",
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-70489011",
+    "name": "GLOSTAD Loveseat",
+    "brand": "IKEA",
+    "category": "sofa",
+    "priceCents": 16900,
+    "productUrl": "https://www.ikea.com/us/en/p/glostad-loveseat-knisa-dark-gray-70489011/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/glostad-loveseat-knisa-dark-gray__1577178_pe1033002_s5.jpg",
+    "dimensions": [
+      1.21,
+      0.679,
+      0.781
+    ],
+    "modelId": "abo-b07hz5rt3y",
+    "mount": "floor",
+    "dominantHex": "#8A8D8F",
+    "styleTags": [
+      "sofa",
+      "gray",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
   }
 ];

@@ -22,10 +22,31 @@ type Obj = RoomLayout["objects"][number];
 
 const topOf = (o: Obj) => o.position[1] + o.dimensions[1] / 2;
 
+/**
+ * How much room an object takes along the world X and Z axes, given its facing.
+ *
+ * Its `dimensions` are in its own local frame, so a bookcase turned to face a
+ * side wall occupies its DEPTH along X, not its width. Ignoring that is what
+ * stops a rotated shelf from reaching the wall it is turned towards: it gets
+ * held off by half its width when only half its depth is in the way.
+ */
+export function extentsOf(dimensions: [number, number, number], rotationY: number) {
+  const c = Math.abs(Math.cos(rotationY));
+  const s = Math.abs(Math.sin(rotationY));
+  return {
+    x: dimensions[0] * c + dimensions[2] * s,
+    z: dimensions[0] * s + dimensions[2] * c,
+  };
+}
+
+const extentsFor = (o: Obj) => extentsOf(o.dimensions, o.rotationY);
+
 /** Do two objects' floor footprints overlap, treating (x,z) as the first one's centre? */
 function footprintsOverlap(a: Obj, x: number, z: number, b: Obj): boolean {
-  const gapX = Math.abs(b.position[0] - x) - (a.dimensions[0] + b.dimensions[0]) / 2;
-  const gapZ = Math.abs(b.position[2] - z) - (a.dimensions[2] + b.dimensions[2]) / 2;
+  const ea = extentsFor(a);
+  const eb = extentsFor(b);
+  const gapX = Math.abs(b.position[0] - x) - (ea.x + eb.x) / 2;
+  const gapZ = Math.abs(b.position[2] - z) - (ea.z + eb.z) / 2;
   return gapX < 0 && gapZ < 0;
 }
 
@@ -134,8 +155,9 @@ export function initialPlacement(
       const angle = (step / steps) * Math.PI * 2;
       const x = ring === 0 ? 0 : Math.cos(angle) * ring * 0.5;
       const z = ring === 0 ? 0 : Math.sin(angle) * ring * 0.5;
-      const spanX = Math.max(0, room.width / 2 - item.dimensions[0] / 2);
-      const spanZ = Math.max(0, room.length / 2 - item.dimensions[2] / 2);
+      const e = extentsFor(item);
+      const spanX = Math.max(0, room.width / 2 - e.x / 2);
+      const spanZ = Math.max(0, room.length / 2 - e.z / 2);
       if (Math.abs(x) > spanX || Math.abs(z) > spanZ) continue;
 
       if (mount === "tabletop") {
@@ -175,31 +197,51 @@ export function snapFloorNearWall(
 ): { position: [number, number, number]; rotationY: number } | null {
   const halfW = room.width / 2;
   const halfL = room.length / 2;
-  const [w, h, d] = item.dimensions;
+  const h = item.dimensions[1];
+  // Measured against the object as it currently sits, not as it was authored.
+  const e = extentsFor(item);
 
   // Distance from each wall to the item's nearest face, not its centre.
   const gaps = {
-    north: z - d / 2 - -halfL,
-    south: halfL - (z + d / 2),
-    west: x - w / 2 - -halfW,
-    east: halfW - (x + w / 2),
+    north: z - e.z / 2 + halfL,
+    south: halfL - (z + e.z / 2),
+    west: x - e.x / 2 + halfW,
+    east: halfW - (x + e.x / 2),
   };
   const side = (Object.keys(gaps) as (keyof typeof gaps)[]).reduce((a, b) =>
     gaps[a] <= gaps[b] ? a : b
   );
   if (gaps[side] > threshold) return null;
 
-  const clampX = Math.min(halfW - w / 2, Math.max(-halfW + w / 2, x));
-  const clampZ = Math.min(halfL - d / 2, Math.max(-halfL + d / 2, z));
+  // Snapping turns the piece to face the room, which changes its extents — so
+  // the flush position has to be computed from the size it will have AFTER the
+  // turn, not the size it had before.
+  const facing = { north: 0, south: Math.PI, west: Math.PI / 2, east: -Math.PI / 2 }[side];
+  const after = extentsOf(item.dimensions, facing);
+  const clampX = Math.min(halfW - after.x / 2, Math.max(-halfW + after.x / 2, x));
+  const clampZ = Math.min(halfL - after.z / 2, Math.max(-halfL + after.z / 2, z));
 
   switch (side) {
     case "north":
-      return { position: [clampX, h / 2, -halfL + d / 2], rotationY: 0 };
+      return { position: [clampX, h / 2, -halfL + after.z / 2], rotationY: facing };
     case "south":
-      return { position: [clampX, h / 2, halfL - d / 2], rotationY: Math.PI };
+      return { position: [clampX, h / 2, halfL - after.z / 2], rotationY: facing };
     case "west":
-      return { position: [-halfW + w / 2, h / 2, clampZ], rotationY: Math.PI / 2 };
+      return { position: [-halfW + after.x / 2, h / 2, clampZ], rotationY: facing };
     default:
-      return { position: [halfW - w / 2, h / 2, clampZ], rotationY: -Math.PI / 2 };
+      return { position: [halfW - after.x / 2, h / 2, clampZ], rotationY: facing };
   }
+}
+
+/** Keep an object inside the room, accounting for which way it is facing. */
+export function clampToRoom(
+  item: Obj,
+  x: number,
+  z: number,
+  room: RoomLayout["room"]
+): [number, number] {
+  const e = extentsFor(item);
+  const spanX = Math.max(0, room.width / 2 - e.x / 2);
+  const spanZ = Math.max(0, room.length / 2 - e.z / 2);
+  return [Math.min(spanX, Math.max(-spanX, x)), Math.min(spanZ, Math.max(-spanZ, z))];
 }

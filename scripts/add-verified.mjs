@@ -59,6 +59,21 @@ const OVERRIDES = {
   // LACK: 35 3/8 x 21 5/8 x 17 3/4.
   "ikea-00104291": { dims: [inch(35.375), inch(17.75), inch(21.625)], price: 2999 },
 
+  // GLOSTAD: 47 5/8 x 30 3/4. The page gives no overall height, so backrest
+  // height (26 3/4) is the tallest point and therefore the bounding box.
+  "ikea-70489011": { dims: [inch(47.625), inch(26.75), inch(30.75)], price: 16900 },
+
+  // MALM in Twin. 44 1/8 wide, 78 3/8 long, 39 3/8 to the headboard.
+  "ikea-09574367": { dims: [inch(44.125), inch(39.375), inch(78.375)],
+    name: "MALM Bed frame, Twin" },
+
+  // MICKE desks: the page states 29 1/2 high, which settles all four.
+  "ikea-80213074": { dims: [inch(41.375), inch(29.5), inch(19.625)] },
+  "ikea-90214308": { dims: [inch(55.875), inch(29.5), inch(19.625)] },
+
+  // ALEX: depth 22 7/8 on the 14 1/8-wide units.
+  "ikea-00473546": { dims: [inch(14.125), inch(27.5), inch(22.875)], price: 9500 },
+
   // BRIMNES: 23 5/8 x 13 3/4 x 74 3/4, all three on the page.
   "ikea-90301225": { dims: [inch(23.625), inch(74.75), inch(13.75)], price: 14900 },
 
@@ -66,28 +81,29 @@ const OVERRIDES = {
   // published, so it stays inferred from a real mirror model.
   "ikea-40597234": { dims: [inch(23.625), inch(66.875), null], price: 10999 },
 
-  // ALEX: the listing card states 14 1/8 x 27 1/2 — width by HEIGHT. Depth is
-  // not published anywhere on the card, so it stays inferred.
-  "ikea-00473546": { dims: [inch(14.125), inch(27.5), null], price: 9500 },
 };
 
 // Products the build never picked up, from the listing cards.
 const NEW_ITEMS = [
+  { id: "ikea-s19175988", name: "MALM Bed frame, Queen", category: "bed", price: 32900,
+    url: "https://www.ikea.com/us/en/p/malm-bed-frame-white-s19175988/",
+    dims: [inch(66.125), inch(39.375), inch(83.125)], hex: "#F2F2F0", tags: ["bed", "white", "ikea"] },
+
   { id: "ikea-s49480188", name: "NEIDEN Bed frame, Full", category: "bed", price: 10900,
     url: "https://www.ikea.com/us/en/p/neiden-bed-frame-pine-s49480188/",
     dims: [inch(54.75), inch(25.625), inch(76.75)], hex: "#D6BC8E", tags: ["bed", "pine", "ikea"] },
 
   { id: "ikea-10192824", name: "MICKE Desk, 28 3/4\"", category: "desk", price: 6999,
     url: "https://www.ikea.com/us/en/p/micke-desk-white-10192824/",
-    dims: [inch(28.75), null, inch(19.625)], hex: "#F2F2F0", tags: ["desk", "white", "ikea"] },
+    dims: [inch(28.75), inch(29.5), inch(19.625)], hex: "#F2F2F0", tags: ["desk", "white", "ikea"] },
 
   { id: "ikea-s09291378", name: "MICKE Corner workstation", category: "desk", price: 29999,
     url: "https://www.ikea.com/us/en/p/micke-corner-workstation-white-s09291378/",
-    dims: [inch(39.375), null, inch(55.875)], hex: "#F2F2F0", tags: ["desk", "corner", "ikea"] },
+    dims: [inch(39.375), inch(29.5), inch(55.875)], hex: "#F2F2F0", tags: ["desk", "corner", "ikea"] },
 
   { id: "ikea-30484075", name: "ALEX Drawer unit with 9 drawers", category: "dresser", price: 22999,
     url: "https://www.ikea.com/us/en/p/alex-drawer-unit-with-9-drawers-white-30484075/",
-    dims: [inch(14.125), inch(45.625), null], hex: "#F2F2F0", tags: ["dresser", "white", "ikea"] },
+    dims: [inch(14.125), inch(45.625), inch(22.875)], hex: "#F2F2F0", tags: ["dresser", "white", "ikea"] },
 
   { id: "ikea-40473547", name: "ALEX Drawer unit on casters", category: "dresser", price: 22999,
     url: "https://www.ikea.com/us/en/p/alex-drawer-unit-on-casters-white-40473547/",
@@ -95,7 +111,7 @@ const NEW_ITEMS = [
 
   { id: "ikea-90484077", name: "ALEX Drawer unit/drop file storage", category: "dresser", price: 12999,
     url: "https://www.ikea.com/us/en/p/alex-drawer-unit-drop-file-storage-white-90484077/",
-    dims: [inch(14.125), inch(27.5), null], hex: "#F2F2F0", tags: ["dresser", "white", "ikea"] },
+    dims: [inch(14.125), inch(27.5), inch(22.875)], hex: "#F2F2F0", tags: ["dresser", "white", "ikea"] },
 ];
 
 // Measurements that turned out to belong to a different product. The screenshot
