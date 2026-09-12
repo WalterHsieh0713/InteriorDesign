@@ -1,15 +1,15 @@
 "use client";
 
-import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
+import { Component, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Canvas, ThreeEvent } from "@react-three/fiber";
 import { OrbitControls, Html, Environment } from "@react-three/drei";
 import * as THREE from "three";
-import { FIXED_CATEGORIES, type RoomLayout } from "@/lib/roomLayoutSchema";
+import { OBJECT_CATEGORIES, type RoomLayout } from "@/lib/roomLayoutSchema";
 import FurnitureMesh from "./FurnitureMesh";
 import { getTexture, getContactShadowTexture, type TextureKind } from "./textures";
 import {
   prepareCameras,
-  bakePlaneTexture,
+  dominantPlaneColor,
   prepareOccluders,
   rotateY,
   type PreparedCamera,
@@ -183,21 +183,22 @@ function Floor({
     [material, width, length]
   );
 
-  const floorPhoto = useMemo(
+  // One measured colour for the whole floor, read out of the photos rather
+  // than the photos themselves painted onto it.
+  const surfaceColor = useMemo(
     () =>
-      bakePlaneTexture(
+      dominantPlaneColor(
         {
           center: new THREE.Vector3(0, 0, 0),
           xAxis: new THREE.Vector3(width, 0, 0),
           yAxis: new THREE.Vector3(0, 0, -length),
           normal: new THREE.Vector3(0, 1, 0),
           fallbackColor: floorColor,
-          resolution: 192,
         },
         cameras,
         occluders
-      ),
-    [cameras, occluders,width, length, floorColor]
+      ) ?? floorColor,
+    [cameras, occluders, width, length, floorColor]
   );
 
   // Shape space maps to the floor as (a, b) -> world (a, 0, -b), which is what
@@ -233,10 +234,13 @@ function Floor({
   // material *kind* ("wood", "tile") a few lines up.
   const surface = (
     <meshStandardMaterial
-      color={floorPhoto ? "#ffffff" : floorColor}
-      map={floorPhoto ?? floorMap}
+      color={surfaceColor}
+      // The procedural grain stays: it's a material texture tinted by the flat
+      // colour, not projected imagery, so the floor still reads as carpet or
+      // wood without reintroducing smeared photos.
+      map={floorMap}
       side={THREE.DoubleSide}
-      roughness={floorPhoto ? 0.75 : floorRoughness}
+      roughness={floorRoughness}
     />
   );
 
@@ -290,18 +294,20 @@ function MeasuredWalls({
 
         return {
           flipped,
-          photo: bakePlaneTexture(
-            {
-              center,
-              xAxis: rotateY(new THREE.Vector3(width, 0, 0), w.rotationY),
-              yAxis: new THREE.Vector3(0, height, 0),
-              normal,
-              fallbackColor: wallColor,
-              resolution: 192,
-            },
-            cameras,
-            occluders
-          ),
+          // Sampled per wall, not per room: a red accent wall stays red while
+          // the others stay white, which one room-wide wallColor can't say.
+          color:
+            dominantPlaneColor(
+              {
+                center,
+                xAxis: rotateY(new THREE.Vector3(width, 0, 0), w.rotationY),
+                yAxis: new THREE.Vector3(0, height, 0),
+                normal,
+                fallbackColor: wallColor,
+              },
+              cameras,
+              occluders
+            ) ?? wallColor,
         };
       }),
     [walls, wallColor, cameras, occluders]
@@ -310,7 +316,7 @@ function MeasuredWalls({
   return (
     <group>
       {walls.map((w, i) => {
-        const { photo, flipped } = baked[i];
+        const { color, flipped } = baked[i];
         return (
           <mesh
             key={i}
@@ -328,10 +334,10 @@ function MeasuredWalls({
                 walls. The old 0.4-opacity ghost walls were a workaround for
                 not having oriented normals. */}
             <meshStandardMaterial
-              color={photo ? "#ffffff" : wallColor}
-              map={photo ?? wallMap}
+              color={color}
+              map={wallMap}
               side={THREE.FrontSide}
-              roughness={photo ? 0.85 : 0.95}
+              roughness={0.95}
             />
           </mesh>
         );
@@ -352,69 +358,65 @@ function Walls({
   const { width, length, height } = room;
   const wallColor = room.wallColor ?? "#d8d4cd";
   const wallMap = useMemo(() => getTexture("plaster", 6), []);
-  const backWallPhoto = useMemo(
+  const backWallColor = useMemo(
     () =>
-      bakePlaneTexture(
+      dominantPlaneColor(
         {
           center: new THREE.Vector3(0, height / 2, -length / 2),
           xAxis: new THREE.Vector3(width, 0, 0),
           yAxis: new THREE.Vector3(0, height, 0),
           normal: new THREE.Vector3(0, 0, 1),
           fallbackColor: wallColor,
-          resolution: 192,
         },
         cameras,
         occluders
-      ),
-    [cameras, occluders,width, height, length, wallColor]
+      ) ?? wallColor,
+    [cameras, occluders, width, height, length, wallColor]
   );
-  const frontWallPhoto = useMemo(
+  const frontWallColor = useMemo(
     () =>
-      bakePlaneTexture(
+      dominantPlaneColor(
         {
           center: new THREE.Vector3(0, height / 2, length / 2),
           xAxis: new THREE.Vector3(-width, 0, 0),
           yAxis: new THREE.Vector3(0, height, 0),
           normal: new THREE.Vector3(0, 0, -1),
           fallbackColor: wallColor,
-          resolution: 192,
         },
         cameras,
         occluders
-      ),
-    [cameras, occluders,width, height, length, wallColor]
+      ) ?? wallColor,
+    [cameras, occluders, width, height, length, wallColor]
   );
-  const rightWallPhoto = useMemo(
+  const rightWallColor = useMemo(
     () =>
-      bakePlaneTexture(
+      dominantPlaneColor(
         {
           center: new THREE.Vector3(width / 2, height / 2, 0),
           xAxis: new THREE.Vector3(0, 0, length),
           yAxis: new THREE.Vector3(0, height, 0),
           normal: new THREE.Vector3(-1, 0, 0),
           fallbackColor: wallColor,
-          resolution: 192,
         },
         cameras,
         occluders
-      ),
-    [cameras, occluders,width, height, length, wallColor]
+      ) ?? wallColor,
+    [cameras, occluders, width, height, length, wallColor]
   );
-  const leftWallPhoto = useMemo(
+  const leftWallColor = useMemo(
     () =>
-      bakePlaneTexture(
+      dominantPlaneColor(
         {
           center: new THREE.Vector3(-width / 2, height / 2, 0),
           xAxis: new THREE.Vector3(0, 0, -length),
           yAxis: new THREE.Vector3(0, height, 0),
           normal: new THREE.Vector3(1, 0, 0),
           fallbackColor: wallColor,
-          resolution: 192,
         },
         cameras,
         occluders
-      ),
-    [cameras, occluders,width, height, length, wallColor]
+      ) ?? wallColor,
+    [cameras, occluders, width, height, length, wallColor]
   );
 
   // A flat guessed wall color stays translucent so you can still see inside
@@ -422,15 +424,15 @@ function Walls({
   // worth looking at directly, so it goes near-opaque instead.
   const wallOpacity = cameras.length > 0 ? 0.92 : 0.4;
 
-  function wallMaterial(photo: THREE.CanvasTexture | null) {
+  function wallMaterial(color: string) {
     return (
       <meshStandardMaterial
-        color={photo ? "#ffffff" : wallColor}
-        map={photo ?? wallMap}
+        color={color}
+        map={wallMap}
         side={THREE.DoubleSide}
         transparent
         opacity={wallOpacity}
-        roughness={photo ? 0.85 : 0.95}
+        roughness={0.95}
       />
     );
   }
@@ -439,19 +441,19 @@ function Walls({
     <group>
       <mesh position={[0, height / 2, -length / 2]} receiveShadow>
         <planeGeometry args={[width, height]} />
-        {wallMaterial(backWallPhoto)}
+        {wallMaterial(backWallColor)}
       </mesh>
       <mesh position={[0, height / 2, length / 2]} rotation={[0, Math.PI, 0]} receiveShadow>
         <planeGeometry args={[width, height]} />
-        {wallMaterial(frontWallPhoto)}
+        {wallMaterial(frontWallColor)}
       </mesh>
       <mesh position={[width / 2, height / 2, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
         <planeGeometry args={[length, height]} />
-        {wallMaterial(rightWallPhoto)}
+        {wallMaterial(rightWallColor)}
       </mesh>
       <mesh position={[-width / 2, height / 2, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
         <planeGeometry args={[length, height]} />
-        {wallMaterial(leftWallPhoto)}
+        {wallMaterial(leftWallColor)}
       </mesh>
     </group>
   );
@@ -462,19 +464,18 @@ function Walls({
 // has the one overhead sun-like light, no matter how many lamps are in shot.
 const LAMP_LIGHT_COLOR = "#ffd9a0";
 
-function DraggableObject({
+/// One object in the room. Selectable so it can be inspected and relabelled,
+/// but fixed in place — this export is a viewer, and rearranging furniture
+/// belongs to the separate editor.
+function RoomObject({
   obj,
-  isDragging,
   isSelected,
-  onDragStart,
   onSelect,
   cameras,
   occluders,
 }: {
   obj: RoomLayout["objects"][number];
-  isDragging: boolean;
   isSelected: boolean;
-  onDragStart: (id: string, y: number) => void;
   onSelect: (id: string) => void;
   cameras: PreparedCamera[];
   occluders: ReturnType<typeof prepareOccluders>;
@@ -491,7 +492,6 @@ function DraggableObject({
   const shadowTexture = useMemo(() => getContactShadowTexture(), []);
   const baseHeight = obj.position[1] - h / 2;
   const showContactShadow = shadowTexture !== null && baseHeight < 0.3 && obj.category !== "rug";
-  const isFixed = FIXED_CATEGORIES.includes(obj.category);
 
   return (
     <group
@@ -499,22 +499,14 @@ function DraggableObject({
       rotation={[0, obj.rotationY, 0]}
       onPointerDown={(e: ThreeEvent<PointerEvent>) => {
         e.stopPropagation();
-        // Doors, windows, stairs and fireplaces are part of the building, not
-        // the furniture. They're still selectable (so you can see what they
-        // are) but never draggable — a door adrift in the middle of the floor
-        // is nonsense, and moving one destroys the only record of where the
-        // real opening was measured.
         onSelect(obj.id);
-        if (isFixed) return;
-        (e.target as Element).setPointerCapture?.(e.pointerId);
-        onDragStart(obj.id, obj.position[1]);
       }}
     >
       <FurnitureMesh
         category={obj.category}
         dimensions={obj.dimensions}
         color={color}
-        opacity={isDragging ? 0.6 : 1}
+        opacity={1}
         cameras={cameras}
         occluders={occluders}
         objectPosition={obj.position}
@@ -537,12 +529,12 @@ function DraggableObject({
             // Never write depth: the blob must not occlude the floor's own
             // texture or another object's shadow overlapping it.
             depthWrite={false}
-            opacity={isDragging ? 0.4 : 0.75}
+            opacity={0.75}
           />
         </mesh>
       )}
       {/* Selection outline: a wireframe box on the object's own bounds, so
-          it's obvious which item the rotate controls will act on. */}
+          it's obvious which item the label panel is editing. */}
       {isSelected && (
         <mesh>
           <boxGeometry args={[w * 1.04, h * 1.04, d * 1.04]} />
@@ -560,8 +552,7 @@ function DraggableObject({
             whiteSpace: "nowrap",
           }}
         >
-          {obj.category}
-          {isFixed && " · fixed"}
+          {obj.label ?? obj.category}
         </div>
       </Html>
     </group>
@@ -573,20 +564,16 @@ function Scene({
   cameras,
   selectedId,
   onSelect,
-  onPositionsSettled,
 }: {
   layout: RoomLayout;
   cameras: PreparedCamera[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
-  onPositionsSettled: (objects: RoomLayout["objects"]) => void;
 }) {
-  const [objects, setObjects] = useState(layout.objects);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const dragPlaneY = useRef(0);
-  const dragPlane = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0));
-  const intersection = useRef(new THREE.Vector3());
-  const { camera, raycaster, gl } = useThree();
+  // Objects are read straight from the layout now. This export is a viewer:
+  // nothing in it moves, so there's no local copy to keep in sync with a drag
+  // in progress. Moving furniture lives in the separate editor.
+  const objects = layout.objects;
   const lightColor = layout.room.lightColor ?? "#ffffff";
 
   // Where the key light comes from. A fixed corner is wrong in every room
@@ -633,10 +620,9 @@ function Scene({
     };
   }, [layout.room, layout.objects]);
 
-  // Everything solid enough to stand between a camera and a surface. Built
-  // from the layout rather than the live dragged copy on purpose: the bake
-  // represents where things were when the room was photographed, so dragging
-  // a chair later must not silently re-bake every wall behind it.
+  // Everything solid enough to stand between a camera and a surface, so the
+  // colour sampling can tell "this wall is grey" from "a grey cabinet is in
+  // front of this wall".
   const occluders = useMemo(
     () =>
       prepareOccluders(
@@ -648,53 +634,6 @@ function Scene({
       ),
     [layout.objects]
   );
-
-  // Rotation is applied to `layout` by the parent rather than here, and flows
-  // back down through this sync — so there's exactly one path for "an object
-  // changed", shared with dragging, instead of an effect racing to fold a
-  // rotation into local state.
-  useEffect(() => setObjects(layout.objects), [layout]);
-
-  const handleDragStart = useCallback((id: string, y: number) => {
-    setDraggingId(id);
-    dragPlaneY.current = y;
-    dragPlane.current.set(new THREE.Vector3(0, 1, 0), -y);
-  }, []);
-
-  useEffect(() => {
-    if (!draggingId) return;
-
-    const canvas = gl.domElement;
-    const pointer = new THREE.Vector2();
-
-    function handleMove(e: PointerEvent) {
-      const rect = canvas.getBoundingClientRect();
-      pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(pointer, camera);
-      if (raycaster.ray.intersectPlane(dragPlane.current, intersection.current)) {
-        const { x, z } = intersection.current;
-        setObjects((prev) =>
-          prev.map((o) => (o.id === draggingId ? { ...o, position: [x, dragPlaneY.current, z] } : o))
-        );
-      }
-    }
-
-    function handleUp() {
-      setDraggingId(null);
-      setObjects((current) => {
-        onPositionsSettled(current);
-        return current;
-      });
-    }
-
-    canvas.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleUp);
-    return () => {
-      canvas.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleUp);
-    };
-  }, [draggingId, camera, raycaster, gl, onPositionsSettled]);
 
   return (
     <>
@@ -779,18 +718,16 @@ function Scene({
         <Walls room={layout.room} cameras={cameras} occluders={occluders} />
       )}
       {objects.map((obj) => (
-        <DraggableObject
+        <RoomObject
           key={obj.id}
           obj={obj}
-          isDragging={draggingId === obj.id}
           isSelected={selectedId === obj.id}
-          onDragStart={handleDragStart}
           onSelect={onSelect}
           cameras={cameras}
           occluders={occluders}
         />
       ))}
-      <OrbitControls enabled={!draggingId} makeDefault />
+      <OrbitControls makeDefault />
     </>
   );
 }
@@ -864,7 +801,7 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
     };
   }, [layout?.cameraFrames]);
 
-  const handlePositionsSettled = useCallback(
+  const saveObjects = useCallback(
     async (objects: RoomLayout["objects"]) => {
       if (!layout) return;
       const updated = { ...layout, objects };
@@ -883,50 +820,41 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
     [layout, sessionId]
   );
 
+  /// Applies a correction to the selected object and persists it. `label` is
+  /// free text shown in place of the category; `category` re-points what the
+  /// thing actually is, which also changes the geometry it renders as.
+  const relabel = useCallback(
+    (changes: { label?: string; category?: RoomLayout["objects"][number]["category"] }) => {
+      if (!layout || !selectedId) return;
+      saveObjects(
+        layout.objects.map((o) => {
+          if (o.id !== selectedId) return o;
+          const next = { ...o, ...changes };
+          // An emptied box means "no correction", not an empty name.
+          if (changes.label !== undefined && changes.label.trim() === "") delete next.label;
+          return next;
+        })
+      );
+    },
+    [layout, selectedId, saveObjects]
+  );
+
   const selected = useMemo(
     () => layout?.objects.find((o) => o.id === selectedId) ?? null,
     [layout, selectedId]
   );
 
-  // 15° steps: fine enough to square something up against a wall, coarse
-  // enough that a couple of taps visibly do something. Goes through
-  // handlePositionsSettled, the same path a finished drag takes, so rotating
-  // saves exactly like moving does and the 3D view picks it up from `layout`.
-  const rotate = useCallback(
-    (direction: 1 | -1) => {
-      if (!layout || !selectedId) return;
-      const step = (direction * Math.PI) / 12;
-      handlePositionsSettled(
-        layout.objects.map((o) =>
-          o.id === selectedId ? { ...o, rotationY: o.rotationY + step } : o
-        )
-      );
-    },
-    [layout, selectedId, handlePositionsSettled]
-  );
-
-  // Keyboard alternative to the on-screen buttons, ignored while typing in
-  // case an input ever lands on this page.
+  // Escape clears the selection — but not while typing a label, where it
+  // should just leave the field alone.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
-      if (e.key === "Escape") {
-        setSelectedId(null);
-        return;
-      }
-      if (!selectedId) return;
-      if (e.key === "q" || e.key === "Q" || e.key === "ArrowLeft") {
-        e.preventDefault();
-        rotate(-1);
-      } else if (e.key === "e" || e.key === "E" || e.key === "ArrowRight") {
-        e.preventDefault();
-        rotate(1);
-      }
+      if (e.key === "Escape") setSelectedId(null);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, rotate]);
+  }, []);
 
   const initialCameraPosition = useMemo(() => {
     if (!layout) return [8, 8, 8] as const;
@@ -958,31 +886,44 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           {layout.room.width.toFixed(1)}m × {layout.room.length.toFixed(1)}m × {layout.room.height.toFixed(1)}m
         </div>
         <div className="text-gray-500">
-          {layout.objects.length} objects — click to select, drag to move
+          {layout.objects.length} objects — click one to rename it
         </div>
         {selected ? (
-          <div className="mt-2 border-t pt-2">
-            <div className="font-medium capitalize">{selected.category}</div>
-            <div className="flex items-center gap-1 mt-1">
-              <button
-                onClick={() => rotate(-1)}
-                className="px-2 py-1 rounded border text-sm leading-none hover:bg-gray-100"
-                title="Rotate left (Q or ←)"
-              >
-                ⟲
-              </button>
-              <button
-                onClick={() => rotate(1)}
-                className="px-2 py-1 rounded border text-sm leading-none hover:bg-gray-100"
-                title="Rotate right (E or →)"
-              >
-                ⟳
-              </button>
-              <span className="text-gray-400 ml-1">15° · Q/E</span>
-            </div>
-            {FIXED_CATEGORIES.includes(selected.category) && (
-              <div className="text-gray-400 mt-1">fixed in place — can’t be moved</div>
-            )}
+          <div className="mt-2 border-t pt-2 w-56">
+            <label className="block text-gray-500 mb-1">Name</label>
+            {/* Keyed by id so switching selection resets the field to that
+                object's own value instead of carrying the last one over. */}
+            <input
+              key={`${selected.id}-label`}
+              defaultValue={selected.label ?? selected.category}
+              placeholder={selected.category}
+              maxLength={60}
+              // Commit on blur/Enter rather than per keystroke: every save is a
+              // PUT of the whole layout, and one per letter typed is absurd.
+              onBlur={(e) => relabel({ label: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
+              className="w-full px-2 py-1 rounded border text-xs"
+            />
+            <label className="block text-gray-500 mt-2 mb-1">Type</label>
+            <select
+              key={`${selected.id}-category`}
+              value={selected.category}
+              onChange={(e) =>
+                relabel({
+                  category: e.target.value as RoomLayout["objects"][number]["category"],
+                })
+              }
+              className="w-full px-2 py-1 rounded border text-xs bg-white"
+            >
+              {OBJECT_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <div className="text-gray-400 mt-1">changing type also changes its shape</div>
           </div>
         ) : (
           <div className="text-gray-400 mt-1">nothing selected</div>
@@ -1010,7 +951,6 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           cameras={cameras}
           selectedId={selectedId}
           onSelect={setSelectedId}
-          onPositionsSettled={handlePositionsSettled}
         />
       </Canvas>
     </div>

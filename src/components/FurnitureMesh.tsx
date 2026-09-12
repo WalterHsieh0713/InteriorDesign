@@ -2,7 +2,7 @@ import { createContext, useContext, useMemo } from "react";
 import * as THREE from "three";
 import { CATEGORY_TEXTURE, getTexture } from "./textures";
 import {
-  bakePlaneTexture,
+  dominantPlaneColor,
   prepareOccluders,
   rotateY,
   type PreparedCamera,
@@ -28,11 +28,12 @@ type Props = {
 // through every Panel call.
 const DetailMap = createContext<THREE.Texture | null>(null);
 
-// The one real photo baked onto this object's single most-visible face (see
+// The colour measured off this object's most-visible face in the photos (see
 // faceGeometryFor below), shared the same way as DetailMap. Null whenever
-// there are no cameras, the category has no single flat face worth texturing
-// (a lamp, a plant), or no camera actually saw this object.
-const PhotoMap = createContext<THREE.CanvasTexture | null>(null);
+// there are no cameras, the category has no single flat face worth sampling
+// (a lamp, a plant), or no camera actually saw this object — in which case
+// the object keeps whichever colour colorize or the category palette gave it.
+const FaceColor = createContext<string | null>(null);
 
 function shade(hex: string, percent: number) {
   const num = parseInt(hex.replace("#", ""), 16);
@@ -61,24 +62,25 @@ function Panel({
   roughness?: number;
   metalness?: number;
   transparent?: boolean;
-  /** This is the panel that stands in for the object's single baked photo
-   * face (see faceGeometryFor) — only one Panel per object should set this. */
+  /** This is the panel standing in for the object's sampled face (see
+   * faceGeometryFor) — only one Panel per object should set this. */
   usePhoto?: boolean;
 }) {
   const detailMap = useContext(DetailMap);
-  const contextPhotoMap = useContext(PhotoMap);
-  const photoMap = usePhoto ? contextPhotoMap : null;
-  const map = photoMap ?? detailMap;
+  const sampledFace = useContext(FaceColor);
+  // A measured colour beats the palette guess, but it's still just a colour —
+  // the panel keeps its procedural grain rather than wearing a photo.
+  const resolved = usePhoto && sampledFace ? sampledFace : color;
   return (
     <mesh position={offset} castShadow receiveShadow>
       <boxGeometry args={size.map((v) => Math.max(v, 0.01)) as [number, number, number]} />
       <meshStandardMaterial
-        color={photoMap ? "#ffffff" : color}
-        map={map}
+        color={resolved}
+        map={detailMap}
         transparent={transparent || opacity < 1}
         opacity={opacity}
-        roughness={photoMap ? 0.85 : roughness}
-        metalness={photoMap ? 0.05 : metalness}
+        roughness={roughness}
+        metalness={metalness}
       />
     </mesh>
   );
@@ -168,7 +170,7 @@ function faceGeometryFor(
   }
 }
 
-function useFacePhotoTexture(props: Props): THREE.CanvasTexture | null {
+function useFaceColor(props: Props): string | null {
   const { category, dimensions, color, cameras, occluders, objectPosition, objectRotationY } = props;
   const [ox, oy, oz] = objectPosition;
   const [w, h, d] = dimensions;
@@ -186,10 +188,13 @@ function useFacePhotoTexture(props: Props): THREE.CanvasTexture | null {
         : new THREE.Vector3(0, face.faceH, 0);
     const normal = rotateY(face.normal, objectRotationY);
 
-    return bakePlaneTexture(
-      { center, xAxis, yAxis, normal, fallbackColor: color, resolution: 96 },
+    return dominantPlaneColor(
+      { center, xAxis, yAxis, normal, fallbackColor: color },
       cameras,
-      occluders
+      occluders,
+      // Coarser than a wall: a chair back is small, and a couple of hundred
+      // accepted samples already settles its colour.
+      24
     );
   }, [category, w, h, d, color, cameras, occluders, ox, oy, oz, objectRotationY]);
 }
@@ -199,12 +204,12 @@ export default function FurnitureMesh(props: Props) {
     () => getTexture(CATEGORY_TEXTURE[props.category] ?? "plaster", 2),
     [props.category]
   );
-  const photo = useFacePhotoTexture(props);
+  const faceColor = useFaceColor(props);
   return (
     <DetailMap.Provider value={map}>
-      <PhotoMap.Provider value={photo}>
+      <FaceColor.Provider value={faceColor}>
         <FurnitureGeometry {...props} />
-      </PhotoMap.Provider>
+      </FaceColor.Provider>
     </DetailMap.Provider>
   );
 }

@@ -245,11 +245,123 @@ function isOccluded(
   return false;
 }
 
+function toHex(r: number, g: number, b: number): string {
+  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+  return `#${((1 << 24) + (clamp(r) << 16) + (clamp(g) << 8) + clamp(b)).toString(16).slice(1)}`;
+}
+
+/**
+ * Reads one representative colour for a whole surface out of the photos,
+ * rather than painting the photos onto it.
+ *
+ * Same projection and occlusion logic as the full bake, but the result is a
+ * single hex colour. This is what "the wall is grey, so make the whole wall
+ * grey" needs: real measured colour, none of the projected imagery, and none
+ * of the smearing that comes with imperfect poses and missing coverage.
+ *
+ * Uses the dominant colour, not the mean. Averaging a red wall that has a
+ * white poster on it gives pink — a colour that appears nowhere in the room.
+ * Instead the samples are dropped into coarse colour buckets, the fullest
+ * bucket wins, and only the samples inside it are averaged, so the result is
+ * always a colour the surface actually is somewhere.
+ *
+ * Cheap by comparison with the bake: a colour estimate converges in a few
+ * thousand samples, where a texture needed one per texel.
+ */
+export function dominantPlaneColor(
+  target: PlaneTarget,
+  cameras: PreparedCamera[],
+  occluders: PreparedOccluder[] = [],
+  resolution = 48
+): string | null {
+  if (cameras.length === 0) return null;
+
+  const nearby = cameras
+    .map((camera) => ({ camera, distance: camera.position.distanceTo(target.center) }))
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 6)
+    .map((entry) => entry.camera);
+
+  const worldPos = new THREE.Vector3();
+  const toCamera = new THREE.Vector3();
+  const clip = new THREE.Vector4();
+
+  // 5 bits per channel: fine enough to keep a beige wall apart from a grey
+  // one, coarse enough that lighting variation across one wall stays in a
+  // single bucket instead of splintering.
+  const buckets = new Map<number, { count: number; r: number; g: number; b: number }>();
+
+  for (let py = 0; py < resolution; py++) {
+    const v = py / (resolution - 1);
+    for (let px = 0; px < resolution; px++) {
+      const u = px / (resolution - 1);
+      worldPos
+        .copy(target.center)
+        .addScaledVector(target.xAxis, u - 0.5)
+        .addScaledVector(target.yAxis, 0.5 - v);
+
+      let best: { weight: number; pixel: [number, number, number] } | null = null;
+
+      for (const camera of nearby) {
+        clip.set(worldPos.x, worldPos.y, worldPos.z, 1).applyMatrix4(camera.viewProjection);
+        if (clip.w <= 0.01) continue;
+        const ndcX = clip.x / clip.w;
+        const ndcY = clip.y / clip.w;
+        if (ndcX < -1 || ndcX > 1 || ndcY < -1 || ndcY > 1) continue;
+
+        toCamera.copy(camera.position).sub(worldPos).normalize();
+        const facing = target.normal.dot(toCamera);
+        if (facing <= 0.15) continue;
+        if (occluders.length > 0 && isOccluded(worldPos, camera.position, occluders)) continue;
+
+        const pixel = samplePixel(camera, ndcX * 0.5 + 0.5, 1 - (ndcY * 0.5 + 0.5));
+        if (!pixel) continue;
+
+        // Only the best view of each point contributes. Blending views is
+        // what produced mush; for a colour estimate there's no reason to.
+        const weight = facing * (1 - Math.abs(ndcX)) * (1 - Math.abs(ndcY));
+        if (!best || weight > best.weight) best = { weight, pixel };
+      }
+
+      if (!best) continue;
+      const [r, g, b] = best.pixel;
+      const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+      const bucket = buckets.get(key);
+      if (bucket) {
+        bucket.count += 1;
+        bucket.r += r;
+        bucket.g += g;
+        bucket.b += b;
+      } else {
+        buckets.set(key, { count: 1, r, g, b });
+      }
+    }
+  }
+
+  let winner: { count: number; r: number; g: number; b: number } | null = null;
+  let total = 0;
+  for (const bucket of buckets.values()) {
+    total += bucket.count;
+    if (!winner || bucket.count > winner.count) winner = bucket;
+  }
+
+  // Too few accepted samples means this surface was barely seen; the caller's
+  // existing fallback colour is more trustworthy than a guess off six pixels.
+  if (!winner || total < 25) return null;
+
+  return toHex(winner.r / winner.count, winner.g / winner.count, winner.b / winner.count);
+}
+
 /**
  * Bakes a flat rectangle (a wall, the floor, or one furniture face) into a
  * canvas texture by projecting it into whichever nearby cameras actually
  * faced it, blending where several overlap, and leaving `fallbackColor`
  * wherever no camera saw it well enough to trust.
+ *
+ * Currently unused: the renderer takes flat per-surface colours from
+ * dominantPlaneColor instead. Kept because it's the whole photo-projection
+ * path, and "show me the real photos on the walls" is a mode worth being able
+ * to turn back on.
  *
  * Returns null (never a broken/black texture) if there are no usable
  * cameras — callers should keep whatever they render today in that case.

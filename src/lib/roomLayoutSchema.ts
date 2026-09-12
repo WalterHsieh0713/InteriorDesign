@@ -138,6 +138,12 @@ export const RoomLayoutSchema = z.object({
       dimensions: vec3,
       confidence: z.number().min(0).max(1),
       color: hexColor.optional(),
+      // A human correction, displayed instead of the category. Detection gets
+      // things wrong — a bin read as a stool, a radiator as a shelf — but the
+      // category has to stay inside the enum because the renderer picks the
+      // object's geometry from it. So a free-text correction lives here, and
+      // the category can be re-pointed separately when the shape is wrong too.
+      label: z.string().max(60).optional(),
     })
   ),
   walls: z.array(wall).optional(),
