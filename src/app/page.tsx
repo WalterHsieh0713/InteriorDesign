@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
+import { LandingHero } from "@/components/LandingHero";
 
 /** Just enough of a post to draw a rail card. */
 type RailPost = {
@@ -103,12 +104,21 @@ export default function Home() {
     railRef.current?.scrollBy({ left: direction * 340, behavior: "smooth" });
   }
 
+  /** Arm the scan and take the visitor to it, from wherever they asked. */
+  const startScan = useCallback(() => {
+    setScanning(true);
+    // Deferred a frame so the section has rendered its QR before we move to it.
+    requestAnimationFrame(() => {
+      document.getElementById("scan")?.scrollIntoView({ behavior: "smooth" });
+    });
+  }, []);
+
   const lidarDeepLink = `roomscanner://scan?session=${sessionId}`;
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
       {/* ── Nav ─────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 px-3 pt-3 sm:px-5">
+      <header className="fixed inset-x-0 top-0 z-40 px-3 pt-3 sm:px-5">
         <div className="mx-auto flex max-w-6xl items-center gap-3 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--ground)_78%,transparent)] py-2 pl-5 pr-2 shadow-[var(--shadow)] backdrop-blur-xl">
           <Link href="/" className="flex flex-shrink-0 items-center gap-2.5 rounded-full">
             <svg viewBox="0 0 20 20" aria-hidden="true" className="h-[19px] w-[19px]">
@@ -116,12 +126,9 @@ export default function Home() {
               <path d="M1.4 12.6h5.2v6" fill="none" stroke="currentColor" strokeWidth="1.5" opacity=".45" />
               <circle cx="13.6" cy="7" r="2.6" fill="var(--amber)" />
             </svg>
-            <span className="display hidden text-[17px] font-semibold sm:block">Room Scanner</span>
+            <span className="display hidden text-[17px] font-semibold sm:block">ROOMII</span>
           </Link>
           <nav className="ml-auto flex items-center gap-0.5">
-            <Link href="/" className={`${navLink} bg-[var(--raised)] text-[var(--fg)]`} aria-current="page">
-              Home
-            </Link>
             <Link href="/rooms" className={navLink}>
               Rooms
             </Link>
@@ -129,63 +136,22 @@ export default function Home() {
               Browse
             </Link>
           </nav>
-          <a
-            href="#scan"
-            onClick={() => setScanning(true)}
+          <button
+            type="button"
+            onClick={startScan}
             className="hidden flex-shrink-0 rounded-full bg-[var(--amber)] px-5 py-2.5 text-sm font-semibold text-[var(--on-amber)] transition-transform hover:-translate-y-px active:translate-y-0 sm:block"
           >
-            Scan my room
-          </a>
+            Scan your room
+          </button>
         </div>
       </header>
 
-      {/* ── Hero ────────────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden px-5 pb-16 pt-16 sm:px-8 sm:pb-24 sm:pt-28">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 -top-40 h-[520px]"
-          style={{
-            background:
-              "radial-gradient(46% 60% at 22% 34%, rgb(233 179 106 / 0.20), transparent 62%), radial-gradient(38% 52% at 76% 22%, rgb(233 179 106 / 0.13), transparent 64%)",
-          }}
-        />
-        <div className="relative mx-auto max-w-6xl">
-          <span className="tb text-[11px] uppercase tracking-[0.18em] text-[var(--fg-3)]">
-            LiDAR room capture
-          </span>
-          <h1 className="display mt-5 max-w-[19ch] text-[clamp(2.6rem,7vw,5.6rem)]">
-            Every room here was measured, not{" "}
-            <span className="text-[var(--amber)]">imagined</span>.
-          </h1>
-          <p className="mt-6 max-w-[52ch] text-[clamp(1rem,1.5vw,1.18rem)] leading-relaxed text-[var(--fg-2)]">
-            Scan the room you actually live in, then find what other people did with one the same
-            size. Down to the centimetre, because the floor plan comes off the sensor and not out of
-            a mood board.
-          </p>
-          <div className="mt-9 flex flex-wrap gap-3">
-            <a
-              href="#scan"
-              onClick={() => setScanning(true)}
-              className="inline-flex items-center gap-2.5 rounded-full bg-[var(--amber)] px-7 py-3.5 font-semibold text-[var(--on-amber)] transition-transform hover:-translate-y-0.5 active:translate-y-0"
-            >
-              Scan my room
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M2 8h12M9 3l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </a>
-            <Link
-              href="/feed"
-              className="inline-flex items-center rounded-full border border-[var(--line)] px-7 py-3.5 font-semibold text-[var(--fg)] transition-colors hover:border-[var(--fg-3)] hover:bg-[var(--raised)]"
-            >
-              Browse designs
-            </Link>
-          </div>
-        </div>
-      </section>
+      {/* ── The room, coming apart ──────────────────────────────────────── */}
+      <LandingHero onScan={startScan} />
 
       {/* ── Scan handoff. The QR is the product: this browser has no depth
            sensor, so the capture happens in the iOS app. ─────────────────── */}
-      <section id="scan" className="scroll-mt-24 px-5 pb-20 sm:px-8">
+      <section id="scan" className="scroll-mt-24 px-5 py-20 sm:px-8 sm:py-28">
         <div className="mx-auto grid max-w-6xl gap-8 rounded-3xl border border-[var(--line)] bg-[var(--raised)] p-6 sm:p-10 md:grid-cols-[auto_minmax(0,1fr)] md:gap-12">
           <div className="flex flex-col items-center gap-4">
             <div className="rounded-2xl bg-[#FBF7F1] p-4 shadow-[var(--shadow)]">

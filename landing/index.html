@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ROOMII — Scan the room you actually live in</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+
+<style>
+/* Palette lifted from the app's globals.css so the landing page and the
+   product are one visual world. The render is on black, so a light editorial
+   ground would have fought the footage as well as the theme. */
+:root{
+  --ground:#141110;
+  --ground-2:#1a1613;
+  --raised:#221d18;
+  --line:#342c24;
+  --line-soft:#241e19;
+
+  --fg:#f3ede4;
+  --fg-2:#b5a996;
+  --fg-3:#877c6d;
+
+  --amber:#e9b36a;
+  --amber-2:#c98a3e;
+  --amber-line:rgb(233 179 106 / .3);
+  --on-amber:#141110;
+
+  --ease:cubic-bezier(.22,.61,.36,1);
+  --shadow:0 24px 60px -28px rgb(0 0 0 / .85);
+
+  --font-display:'Familjen Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --font-ui:'Hanken Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --font-mono:'DM Mono',ui-monospace,SFMono-Regular,monospace;
+}
+
+*,*::before,*::after{ box-sizing:border-box; }
+html,body,h1,p,figure{ margin:0; padding:0; }
+html{ -webkit-text-size-adjust:100%; height:100%; }
+
+body{
+  height:100%;
+  background:var(--ground);
+  color:var(--fg);
+  font-family:var(--font-ui);
+  font-weight:400;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  /* The page itself never scrolls — the wheel is an advance gesture. */
+  overflow:hidden;
+}
+::selection{ background:var(--amber); color:var(--on-amber); }
+
+button{ font:inherit; cursor:pointer; }
+
+/* ---------------- stage ---------------- */
+.stage{ position:fixed; inset:0; z-index:0; overflow:hidden; background:#000; }
+.stage video{
+  position:absolute; top:50%; left:50%;
+  width:100%; height:100%;
+  transform:translate(-50%,-50%) scale(1.04);
+  object-fit:cover;
+  will-change:transform;
+}
+
+/* Darkened top and bottom so the nav and the hint never sit on bare render,
+   left open through the middle where the room actually is. */
+.veil{
+  position:absolute; inset:0; pointer-events:none;
+  background:
+    linear-gradient(to bottom, rgba(20,17,16,.86) 0%, rgba(20,17,16,.16) 26%, rgba(20,17,16,.16) 72%, rgba(20,17,16,.92) 100%),
+    radial-gradient(120% 90% at 50% 50%, rgba(20,17,16,0) 38%, rgba(20,17,16,.72) 100%);
+}
+
+/* A slow amber bloom behind the object. This is the one piece of pure
+   theatre on the page, and it is the theme's accent rather than a glow for
+   its own sake. */
+/* A ring rather than a blob. A centred glow would sit directly behind the
+   headline and undo the scrim — this keeps the amber out at the object's
+   radius, where the furniture is, and leaves the middle dark for the type. */
+.bloom{
+  position:absolute; inset:0; pointer-events:none;
+  mix-blend-mode:screen;
+  opacity:.5;
+  background:radial-gradient(54% 48% at 50% 53%,
+    transparent 0%,
+    rgb(233 179 106 / .04) 34%,
+    rgb(233 179 106 / .20) 60%,
+    rgb(201 138 62 / .07) 78%,
+    transparent 92%);
+  animation:breathe 9s var(--ease) infinite;
+}
+@keyframes breathe{
+  0%,100%{ opacity:.34; transform:scale(1); }
+  50%    { opacity:.54; transform:scale(1.05); }
+}
+
+/* Fine grain so the large flat darks do not band. Overlay, not multiply —
+   multiply on a near-black ground is invisible. */
+.grain{
+  position:absolute; inset:-50%; opacity:.16;
+  mix-blend-mode:overlay; pointer-events:none;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='.5'/></svg>");
+}
+
+/* ---------------- chrome ---------------- */
+.chrome{
+  position:fixed; left:0; right:0; top:0; z-index:40;
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:max(14px, calc(env(safe-area-inset-top, 0px) + 12px)) clamp(16px,3.4vw,44px) 14px;
+  background:linear-gradient(to bottom, rgba(20,17,16,.92) 0%, rgba(20,17,16,.55) 62%, rgba(20,17,16,0) 100%);
+}
+.mark{
+  display:flex; align-items:center; gap:9px;
+  font-family:var(--font-display); font-weight:600;
+  font-size:17px; letter-spacing:-.03em; color:var(--fg);
+  min-width:0; flex-shrink:1;
+}
+.mark svg{ flex-shrink:0; }
+
+.nav{ display:flex; align-items:center; gap:clamp(10px,2.4vw,28px); flex-shrink:0; }
+.nav a:not(.pill){
+  color:var(--fg-2); text-decoration:none; font-size:14.5px;
+  letter-spacing:-.008em; transition:color .3s var(--ease);
+}
+.nav a:not(.pill):hover{ color:var(--fg); }
+
+.pill{
+  display:inline-flex; align-items:center; justify-content:center;
+  height:40px; padding:0 21px; border-radius:999px;
+  background:var(--amber); color:var(--on-amber);
+  -webkit-text-fill-color:var(--on-amber);
+  font-size:14.5px; font-weight:600; letter-spacing:-.008em;
+  text-decoration:none; white-space:nowrap; border:0;
+  transition:transform .4s var(--ease), background .3s var(--ease);
+}
+.nav .pill{ color:var(--on-amber); -webkit-text-fill-color:var(--on-amber); }
+.pill:hover,.pill:focus-visible{ transform:translateY(-2px); background:#f3c584; }
+.pill:focus-visible{ outline:2px solid var(--amber); outline-offset:3px; }
+
+.pill.ghost{
+  background:transparent; color:var(--fg); -webkit-text-fill-color:var(--fg);
+  border:1px solid var(--line); font-weight:500;
+}
+.pill.ghost:hover,.pill.ghost:focus-visible{ background:var(--raised); border-color:var(--amber-line); }
+
+/* ---------------- panels ---------------- */
+.panels{ position:fixed; inset:0; z-index:20; pointer-events:none; }
+.panel{
+  position:absolute; inset:0;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  text-align:center;
+  padding:max(104px, calc(env(safe-area-inset-top,0px) + 88px)) clamp(20px,5vw,60px) max(120px, calc(env(safe-area-inset-bottom,0px) + 104px));
+  opacity:0;
+  transform:translate3d(0,18px,0);
+  transition:opacity .85s var(--ease), transform .85s var(--ease);
+}
+
+/* A scrim that travels with the copy.
+   The room is bright, white and busy exactly where the text sits, so the
+   type was competing with desks and chairs for the same pixels. This pools
+   shadow behind the words only — soft-edged and elliptical, so it reads as
+   the render falling into darkness rather than as a box laid on top of it.
+   It rides on the panel, so it appears and leaves with the text. */
+.panel::before{
+  content:"";
+  position:absolute;
+  left:50%; top:50%;
+  width:min(1180px, 104vw);
+  height:min(660px, 92vh);
+  transform:translate(-50%,-50%);
+  background:radial-gradient(closest-side,
+    rgba(10,8,7,.92) 0%,
+    rgba(10,8,7,.86) 34%,
+    rgba(10,8,7,.62) 58%,
+    rgba(10,8,7,.26) 79%,
+    transparent 100%);
+  pointer-events:none;
+}
+/* Everything the panel contains sits above its own scrim. */
+.panel > *{ position:relative; z-index:1; }
+/* Discrete phases, so the panels are state-driven with real CSS transitions
+   rather than repainted every frame. */
+.panel.is-on{ opacity:1; transform:none; pointer-events:auto; }
+
+h1{
+  font-family:var(--font-display);
+  font-weight:600;
+  font-size:clamp(36px,7.2vw,104px);
+  line-height:.97;
+  letter-spacing:-.038em;
+  max-width:15ch;
+  text-wrap:balance;
+  /* Two shadows, not one: a tight dark edge to separate the letterform from
+     whatever white furniture is behind it, and a wide soft one to seat the
+     whole block in the scrim. */
+  text-shadow:0 1px 2px rgba(0,0,0,.55), 0 6px 40px rgba(0,0,0,.72);
+}
+h1 em{
+  font-style:normal;
+  color:var(--amber);
+  /* The accent runs lighter than the cream, so it needs its own contact
+     shadow to survive over a lit wall. */
+  text-shadow:0 1px 2px rgba(0,0,0,.6), 0 6px 34px rgba(20,10,0,.8);
+}
+
+/* The wordmark panel. Bigger, wider tracking, nothing else on screen. */
+.wordmark h1{
+  font-size:clamp(54px,15vw,190px);
+  letter-spacing:-.05em;
+  font-weight:700;
+  max-width:none;
+}
+.wordmark .tag{
+  margin-top:clamp(14px,2vw,22px);
+  font-family:var(--font-mono);
+  font-size:clamp(11px,1.1vw,13px);
+  letter-spacing:.34em;
+  text-transform:uppercase;
+  color:var(--fg-2);
+  text-shadow:0 1px 2px rgba(0,0,0,.7), 0 2px 16px rgba(0,0,0,.6);
+}
+
+.sub{
+  margin-top:clamp(18px,2.2vw,26px);
+  font-size:clamp(15px,1.28vw,19px);
+  line-height:1.55; letter-spacing:-.008em;
+  /* Lifted from --fg-2 to near-white. Body text is the first thing the
+     render swallows, and it was landing straight on the bright desktops. */
+  color:#ece5da;
+  max-width:min(50ch,100%);
+  text-wrap:pretty;
+  text-shadow:0 1px 2px rgba(0,0,0,.7), 0 2px 18px rgba(0,0,0,.65);
+}
+.cta{ margin-top:clamp(26px,3.2vw,40px); display:flex; flex-wrap:wrap; gap:12px; justify-content:center; }
+.cta .pill{ height:50px; padding:0 28px; font-size:15px; }
+
+/* ---------------- advance affordance ---------------- */
+.hint{
+  position:fixed; left:0; right:0; bottom:0; z-index:41;
+  display:flex; flex-direction:column; align-items:center; gap:10px;
+  padding:0 20px max(20px, calc(env(safe-area-inset-bottom,0px) + 16px));
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.22em;
+  text-transform:uppercase; color:var(--fg-2);
+  text-shadow:0 1px 2px rgba(0,0,0,.8), 0 2px 14px rgba(0,0,0,.7);
+  pointer-events:none;
+  opacity:0; transition:opacity .6s var(--ease);
+}
+.hint.is-on{ opacity:1; }
+.hint .arrow{
+  width:20px; height:20px;
+  animation:nudge 1.9s var(--ease) infinite;
+}
+@keyframes nudge{
+  0%,100%{ transform:translateY(0); opacity:.5; }
+  50%    { transform:translateY(5px); opacity:1; }
+}
+
+/* Phase dots */
+.dots{
+  position:fixed; z-index:41;
+  right:clamp(14px,2.6vw,30px); top:50%; transform:translateY(-50%);
+  display:flex; flex-direction:column; gap:11px;
+}
+.dots button{
+  width:8px; height:8px; padding:0; border:0; border-radius:999px;
+  background:var(--line); cursor:pointer;
+  transition:background .4s var(--ease), transform .4s var(--ease);
+}
+.dots button[aria-current="true"]{ background:var(--amber); transform:scale(1.45); }
+.dots button:focus-visible{ outline:2px solid var(--amber); outline-offset:3px; }
+
+/* ---------------- preloader ---------------- */
+.boot{
+  position:fixed; inset:0; z-index:90;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px;
+  background:var(--ground);
+  transition:opacity .8s var(--ease), visibility .8s;
+}
+.boot.done{ opacity:0; visibility:hidden; }
+.boot p{ font-family:var(--font-mono); font-size:11.5px; letter-spacing:.28em; color:var(--fg-3); }
+.bar{ width:170px; height:1px; background:var(--line); overflow:hidden; }
+.bar i{ display:block; height:100%; width:100%; background:var(--amber); transform:scaleX(0); transform-origin:0 50%; }
+
+/* ---------------- responsive ---------------- */
+@media (max-width:720px){
+  .nav a:not(.pill){ display:none; }
+  .mark{ font-size:15px; }
+  .nav .pill{ height:38px; padding:0 16px; font-size:13.5px; }
+  h1{ max-width:13ch; font-size:clamp(32px,9.4vw,54px); }
+  .wordmark h1{ font-size:clamp(56px,19vw,110px); }
+  .sub{ font-size:15px; max-width:36ch; }
+  .panel{ padding:max(92px, calc(env(safe-area-inset-top,0px) + 76px)) 18px max(112px, calc(env(safe-area-inset-bottom,0px) + 96px)); }
+  .dots{ right:10px; gap:9px; }
+}
+@media (max-width:420px){
+  .nav .pill{ height:36px; padding:0 14px; font-size:13px; }
+  h1{ max-width:12ch; font-size:clamp(30px,10vw,42px); }
+  .cta{ width:100%; }
+  .cta .pill{ width:100%; max-width:300px; height:46px; font-size:14px; }
+}
+@media (max-height:520px) and (orientation:landscape){
+  .panel{ padding:max(70px, calc(env(safe-area-inset-top,0px) + 54px)) 24px max(72px, calc(env(safe-area-inset-bottom,0px) + 56px)); }
+  h1{ font-size:clamp(26px,7.6vh,44px); }
+  .wordmark h1{ font-size:clamp(40px,16vh,80px); }
+  .sub{ margin-top:10px; font-size:14px; }
+  .cta{ margin-top:14px; }
+}
+@media (prefers-reduced-motion: reduce){
+  .bloom,.hint .arrow{ animation:none; }
+  .panel{ transition-duration:.01ms; }
+}
+</style>
+</head>
+<body>
+
+<div class="boot" id="boot">
+  <div class="bar"><i id="bootBar"></i></div>
+  <p id="bootPct">LOADING 0%</p>
+</div>
+
+<div class="stage">
+  <video id="clip" muted playsinline preload="auto" disablepictureinpicture></video>
+  <div class="veil"></div>
+  <div class="bloom"></div>
+  <div class="grain"></div>
+</div>
+
+<header class="chrome">
+  <div class="mark">
+    <svg viewBox="0 0 20 20" width="19" height="19" aria-hidden="true">
+      <rect x="1.4" y="1.4" width="17.2" height="17.2" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M1.4 12.6h5.2v6" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".45"/>
+      <circle cx="13.6" cy="7" r="2.6" fill="var(--amber)"/>
+    </svg>
+    ROOMII
+  </div>
+  <nav class="nav">
+    <a href="/rooms">Rooms</a>
+    <a href="/feed">Browse</a>
+    <a class="pill" href="/">Scan your room</a>
+  </nav>
+</header>
+
+<main class="panels" id="panels">
+
+  <section class="panel wordmark" data-panel>
+    <h1>ROOMII</h1>
+    <p class="tag">Rooms, measured</p>
+  </section>
+
+  <section class="panel" data-panel>
+    <h1>Measured, not <em>imagined</em>.</h1>
+    <p class="sub">A LiDAR pass reads your walls where they actually stand — the bay, the alcove, the boxed-in pillar in the corner — in about forty seconds.</p>
+    <div class="cta"><a class="pill" href="/">Scan your room</a></div>
+  </section>
+
+  <section class="panel" data-panel>
+    <h1>Then take it <em>apart</em>.</h1>
+    <p class="sub">Put real furniture back into the space you just measured, move it across the true footprint, and watch what it costs move with it.</p>
+    <div class="cta"><a class="pill" href="/feed">Browse for inspiration</a></div>
+  </section>
+
+  <section class="panel" data-panel>
+    <h1>Every piece, accounted for.</h1>
+    <p class="sub">RoomPlan measures the shell down to the centimetre. Gemini finds the things LiDAR cannot see — the thermostat, the outlet, the books — and back-projects them onto geometry we already trust. The catalog prices whatever you put back in.</p>
+    <div class="cta">
+      <a class="pill" href="/">Scan your room</a>
+      <a class="pill ghost" href="/feed">See other rooms</a>
+    </div>
+  </section>
+
+</main>
+
+<nav class="dots" id="dots" aria-label="Chapter"></nav>
+
+<div class="hint" id="hint">
+  <svg class="arrow" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M12 5v13m0 0 6-6m-6 6-6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <span id="hintText">Scroll or click to continue</span>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var VIDEO_URL = "./roomii.mp4";
+  var VIDEO_BYTES = 10624891; // used only when the server sends no content-length
+
+  // Rest points, in seconds, read off the render itself:
+  //   0.00  intact room, before the orbit
+  //   2.30  orbit finished, the instant before the room lets go
+  //   3.70  burst complete, pieces out in a ring
+  //   8.00  settled, end of clip
+  // The clip is 8.000s / 192 frames / 24fps and re-encoded all-intra, so a
+  // pause lands on an exact frame instead of the nearest keyframe.
+  var STOPS = [0.00, 2.30, 3.70, 8.00];
+  var LAST  = STOPS.length - 1;
+
+  var clip    = document.getElementById("clip");
+  var boot    = document.getElementById("boot");
+  var bootBar = document.getElementById("bootBar");
+  var bootPct = document.getElementById("bootPct");
+  var hint    = document.getElementById("hint");
+  var hintText= document.getElementById("hintText");
+  var dotWrap = document.getElementById("dots");
+  var panels  = [].slice.call(document.querySelectorAll("[data-panel]"));
+
+  var phase   = 0;      // which rest point we are sitting at
+  var playing = false;  // true while a segment is running
+  var target  = 0;      // where the running segment ends
+  var ready   = false;
+
+  // ---- chapter dots -------------------------------------------------
+  var dots = panels.map(function(_, i){
+    var b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("aria-label", "Chapter " + (i + 1));
+    b.addEventListener("click", function(){ jumpTo(i); });
+    dotWrap.appendChild(b);
+    return b;
+  });
+
+  function render(){
+    for (var i = 0; i < panels.length; i++){
+      var on = !playing && i === phase;
+      panels[i].classList.toggle("is-on", on);
+      dots[i].setAttribute("aria-current", i === phase ? "true" : "false");
+    }
+    var showHint = !playing && phase < LAST;
+    hint.classList.toggle("is-on", showHint);
+    if (showHint) hintText.textContent = phase === 0 ? "Scroll or click to begin" : "Scroll or click to continue";
+  }
+
+  // ---- segment playback ---------------------------------------------
+  function runTo(next){
+    if (!ready || playing || next === phase) return;
+    phase = next;
+    target = STOPS[phase];
+    playing = true;
+    render();
+
+    var p = clip.play();
+    if (p && p.catch) p.catch(function(){
+      // Autoplay refused. Land on the frame anyway so the story still moves.
+      settle();
+    });
+  }
+
+  function settle(){
+    playing = false;
+    try { clip.pause(); } catch (e) {}
+    try { clip.currentTime = target; } catch (e) {}
+    render();
+  }
+
+  function advance(){ if (phase < LAST) runTo(phase + 1); }
+
+  // Stepping backwards rewinds rather than plays: the pieces flying back
+  // together at speed reads as a glitch, not as a rewind.
+  function jumpTo(i){
+    if (!ready || playing || i === phase) return;
+    if (i > phase) { runTo(i); return; }
+    phase = i;
+    target = STOPS[i];
+    try { clip.currentTime = target; } catch (e) {}
+    render();
+  }
+
+  // timeupdate only fires a few times a second, which would overshoot a
+  // 1.4s segment badly — so the stop is watched on every frame.
+  function watch(){
+    if (playing && clip.currentTime >= target - 0.012) settle();
+    requestAnimationFrame(watch);
+  }
+  clip.addEventListener("ended", function(){ if (playing) settle(); });
+
+  // ---- input ---------------------------------------------------------
+  function fromControl(el){
+    return !!(el && el.closest && el.closest("a,button"));
+  }
+
+  window.addEventListener("click", function(e){
+    if (fromControl(e.target)) return; // let links and dots do their own job
+    advance();
+  });
+
+  var wheelLock = false;
+  window.addEventListener("wheel", function(e){
+    if (wheelLock) return;
+    if (Math.abs(e.deltaY) < 8) return;
+    wheelLock = true;
+    setTimeout(function(){ wheelLock = false; }, 420);
+    if (e.deltaY > 0) advance();
+    else if (phase > 0) jumpTo(phase - 1);
+  }, { passive:true });
+
+  var touchY = null;
+  window.addEventListener("touchstart", function(e){ touchY = e.touches[0].clientY; }, { passive:true });
+  window.addEventListener("touchend", function(e){
+    if (touchY === null) return;
+    var dy = e.changedTouches[0].clientY - touchY;
+    touchY = null;
+    if (Math.abs(dy) < 42) return;          // a tap is handled by the click path
+    if (dy < 0) advance();
+    else if (phase > 0) jumpTo(phase - 1);
+  }, { passive:true });
+
+  window.addEventListener("keydown", function(e){
+    var k = e.key;
+    if (k === " " || k === "Enter" || k === "ArrowDown" || k === "ArrowRight" || k === "PageDown"){
+      if (fromControl(document.activeElement)) return;
+      e.preventDefault();
+      advance();
+    } else if (k === "ArrowUp" || k === "ArrowLeft" || k === "PageUp"){
+      e.preventDefault();
+      if (phase > 0) jumpTo(phase - 1);
+    }
+  });
+
+  // ---- boot ----------------------------------------------------------
+  function setProgress(f){
+    bootBar.style.transform = "scaleX(" + f + ")";
+    bootPct.textContent = "LOADING " + Math.round(f * 100) + "%";
+  }
+
+  var started = false;
+  function start(){
+    if (started) return;
+    started = true;
+    ready = true;
+    boot.classList.add("done");
+    render();
+  }
+
+  var attached = false;
+  function attach(src){
+    if (attached) return;
+    attached = true;
+
+    clip.addEventListener("loadedmetadata", function(){
+      // Trust the file over the hardcoded table if the render is re-exported
+      // at a different length.
+      if (clip.duration && Math.abs(clip.duration - STOPS[LAST]) > 0.05){
+        STOPS[LAST] = clip.duration;
+      }
+      try { clip.currentTime = 0; } catch (e) {}
+    });
+
+    // A muted video that has never played paints nothing in several browsers,
+    // so nudge it once and pause straight away to force frame 0 on screen.
+    clip.addEventListener("loadeddata", function(){
+      var p = clip.play();
+      if (p && p.then) p.then(function(){ clip.pause(); try { clip.currentTime = 0; } catch(e){} start(); })
+                        .catch(function(){ start(); });
+      else { try { clip.pause(); } catch(e){} start(); }
+    });
+    clip.addEventListener("canplaythrough", start);
+    clip.addEventListener("error", start);
+
+    clip.src = src;
+    clip.load();
+    setTimeout(start, 12000); // a stalled decode must not strand the preloader
+  }
+
+  function preload(){
+    // Buffer the whole file first. Segment playback still seeks on every
+    // chapter jump, and seeking inside a buffered blob is instant where a
+    // range request is a stall.
+    var ctrl   = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var signal = ctrl ? ctrl.signal : undefined;
+
+    var bail = setTimeout(function(){
+      if (!attached){
+        if (ctrl) try { ctrl.abort(); } catch (e) {}
+        setProgress(1);
+        attach(VIDEO_URL);
+      }
+    }, 15000);
+
+    fetch(VIDEO_URL, { signal:signal }).then(function(res){
+      if (!res.ok || !res.body) throw new Error("no stream");
+      var total  = parseInt(res.headers.get("content-length") || "0", 10);
+      var reader = res.body.getReader();
+      var chunks = [];
+      var got = 0;
+      function pump(){
+        return reader.read().then(function(r){
+          if (r.done) return new Blob(chunks, { type:"video/mp4" });
+          chunks.push(r.value);
+          got += r.value.length;
+          setProgress(Math.min(total ? got / total : got / VIDEO_BYTES, .99));
+          return pump();
+        });
+      }
+      return pump();
+    }).then(function(blob){
+      clearTimeout(bail);
+      setProgress(1);
+      attach(URL.createObjectURL(blob));
+    }).catch(function(){
+      clearTimeout(bail);
+      setProgress(1);
+      attach(VIDEO_URL); // CORS, abort, offline, or opened over file://
+    });
+  }
+
+  render();
+  preload();
+  requestAnimationFrame(watch);
+})();
+</script>
+
+</body>
+</html>
