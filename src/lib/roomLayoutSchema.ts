@@ -22,6 +22,8 @@ export const OBJECT_CATEGORIES = [
   "other",
 ] as const;
 
+export type ObjectCategory = (typeof OBJECT_CATEGORIES)[number];
+
 export const SURFACE_MATERIALS = [
   "carpet",
   "wood",
@@ -51,6 +53,33 @@ const cameraFrame = z.object({
   height: z.number().positive(),
 });
 
+// What a given object in the room *is*, commercially. The scan can only ever
+// report "owned" — it sees furniture the person already has and knows nothing
+// about where it came from. The other two arms are written client-side in the
+// editor when someone swaps in or places a product.
+//
+// `priceCents` is deliberately denormalized onto the binding rather than looked
+// up from the catalog at read time: the feed snapshots a design's total at
+// publish time, and a post should keep describing what was actually shared even
+// after a catalog price changes.
+export const ItemBindingSchema = z.discriminatedUnion("source", [
+  z.object({ source: z.literal("owned") }),
+  z.object({
+    source: z.literal("catalog"),
+    catalogItemId: z.string(),
+    priceCents: z.number().int().nonnegative(),
+    url: z.url(),
+  }),
+  z.object({
+    source: z.literal("custom"),
+    label: z.string(),
+    priceCents: z.number().int().nonnegative().nullable(),
+    url: z.url().nullable(),
+  }),
+]);
+
+export type ItemBinding = z.infer<typeof ItemBindingSchema>;
+
 // Colors and materials are optional throughout: the LiDAR path has no camera
 // imagery to sample them from, and layouts captured before this existed must
 // keep validating. Anything missing falls back to the category palette.
@@ -77,6 +106,10 @@ export const RoomLayoutSchema = z.object({
       dimensions: vec3,
       confidence: z.number().min(0).max(1),
       color: hexColor.optional(),
+      // `.default()` is what makes this change safe to land mid-flight: every
+      // layout saved before bindings existed still parses, and comes back as
+      // "owned" — which is exactly what a scanned object is.
+      binding: ItemBindingSchema.default({ source: "owned" }),
     })
   ),
   cameraFrames: z.array(cameraFrame).optional(),
