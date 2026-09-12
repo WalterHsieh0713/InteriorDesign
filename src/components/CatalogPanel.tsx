@@ -30,6 +30,12 @@ function PosterThumb({ art, size }: { art: PosterArt; size: PosterSize }) {
   return <div ref={host} className="overflow-hidden rounded bg-neutral-100 dark:bg-neutral-800" />;
 }
 
+// The rail is wide enough to read as a section switcher rather than an icon.
+const RAIL_PX = 80;
+const DEFAULT_WIDTH = 320;
+const MIN_WIDTH = 260;
+const MAX_WIDTH = 620;
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -57,6 +63,48 @@ function CatalogPanel({ open, onClose, onOpen, swapTargetLabel, onPick, onAddPos
 
   // Stays mounted so it can slide rather than blink into existence, and so a
   // half-typed search and a chosen category survive closing and reopening it.
+  // Width is remembered per browser: someone who widens the catalog once
+  // usually wants it that way next time too.
+  // Read once at mount rather than in an effect, which would render the default
+  // first and then jump. Safe from hydration mismatch because RoomScene renders
+  // a loading state until the layout arrives, so this panel is never in the
+  // server-rendered HTML.
+  const [width, setWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return DEFAULT_WIDTH;
+    try {
+      const saved = Number(localStorage.getItem("catalogWidth"));
+      if (Number.isFinite(saved) && saved >= MIN_WIDTH) return Math.min(saved, MAX_WIDTH);
+    } catch {
+      // Private windows and blocked storage both throw; the default is fine.
+    }
+    return DEFAULT_WIDTH;
+  });
+  const [dragging, setDragging] = useState(false);
+
+  function startResize(e: React.PointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = width;
+    setDragging(true);
+
+    // Dragging left widens the panel, since it grows from the right edge.
+    function onMove(ev: PointerEvent) {
+      const next = Math.round(startWidth + (startX - ev.clientX));
+      setWidth(Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, next)));
+    }
+    function onUp() {
+      setDragging(false);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setWidth((w) => {
+        try { localStorage.setItem("catalogWidth", String(w)); } catch {}
+        return w;
+      });
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
   // Clicking the rail's current section closes the drawer; clicking the other
   // one switches to it without making you close and reopen.
   function railClick(next: "furniture" | "decor") {
@@ -67,14 +115,16 @@ function CatalogPanel({ open, onClose, onOpen, swapTargetLabel, onPick, onAddPos
     }
   }
 
-  const RAIL = "w-14";
-
   return (
     <>
       {/* A permanent rail down the right edge, rather than one button lost in
           the middle of the bottom toolbar. The catalog is the thing people use
-          most, so it gets a fixed, obvious home. */}
-      <div className={`absolute right-0 top-0 z-30 flex ${RAIL} h-full flex-col items-center gap-2 border-l border-black/10 bg-white/95 py-3 backdrop-blur dark:border-white/10 dark:bg-neutral-900/95`}>
+          most, so it gets a fixed, obvious home — and enough size to read as
+          one. */}
+      <div
+        style={{ width: RAIL_PX }}
+        className="absolute right-0 top-0 z-30 flex h-full flex-col items-center gap-3 border-l border-black/10 bg-white/95 py-4 backdrop-blur dark:border-white/10 dark:bg-neutral-900/95"
+      >
         {([
           { id: "furniture" as const, glyph: "🛋", label: "Furniture" },
           { id: "decor" as const, glyph: "✦", label: "Decor" },
@@ -86,13 +136,13 @@ function CatalogPanel({ open, onClose, onOpen, swapTargetLabel, onPick, onAddPos
               onClick={() => railClick(r.id)}
               aria-pressed={active}
               title={r.label}
-              className={`flex w-11 flex-col items-center gap-0.5 rounded-lg px-1 py-2 text-[9px] font-medium leading-tight transition ${
+              className={`flex w-[4.25rem] flex-col items-center gap-1.5 rounded-xl px-1 py-3 text-[11px] font-semibold leading-tight transition ${
                 active
-                  ? "bg-blue-600 text-white"
-                  : "text-neutral-600 hover:bg-black/5 dark:text-neutral-300 dark:hover:bg-white/10"
+                  ? "bg-blue-600 text-white shadow-md"
+                  : "text-neutral-700 hover:bg-black/5 dark:text-neutral-200 dark:hover:bg-white/10"
               }`}
             >
-              <span aria-hidden className="text-base leading-none">{r.glyph}</span>
+              <span aria-hidden className="text-[26px] leading-none">{r.glyph}</span>
               {r.label}
             </button>
           );
@@ -102,10 +152,31 @@ function CatalogPanel({ open, onClose, onOpen, swapTargetLabel, onPick, onAddPos
       <aside
         aria-hidden={!open}
         inert={!open ? true : undefined}
-        className={`absolute right-14 top-0 z-20 flex h-full w-80 max-w-[calc(100%-3.5rem)] flex-col border-l border-black/10 bg-white/95 backdrop-blur transition-transform duration-200 ease-out motion-reduce:transition-none dark:border-white/10 dark:bg-neutral-900/95 ${
-          open ? "translate-x-0 shadow-2xl" : "pointer-events-none translate-x-[calc(100%+3.5rem)]"
-        }`}
+        style={{
+          width,
+          right: RAIL_PX,
+          // Slide the panel AND the rail's width clear, so nothing peeks out.
+          transform: open ? "translateX(0)" : `translateX(${width + RAIL_PX}px)`,
+          // Dragging the handle should track the pointer exactly, not ease
+          // behind it a fifth of a second late.
+          transition: dragging ? "none" : undefined,
+        }}
+        className="absolute top-0 z-20 flex h-full max-w-[calc(100%-5rem)] flex-col border-l border-black/10 bg-white/95 shadow-2xl backdrop-blur transition-transform duration-200 ease-out motion-reduce:transition-none dark:border-white/10 dark:bg-neutral-900/95"
       >
+        {/* Grab the edge to widen it. The panel covers the room it is meant to
+            help you arrange, so how much room it takes has to be yours. */}
+        <div
+          onPointerDown={startResize}
+          onDoubleClick={() => setWidth(DEFAULT_WIDTH)}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize catalog. Double-click to reset."
+          title="Drag to resize · double-click to reset"
+          className="group absolute left-0 top-0 z-10 h-full w-2 -translate-x-1/2 cursor-col-resize"
+        >
+          <span className="absolute left-1/2 top-1/2 h-16 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/15 transition group-hover:bg-blue-500 dark:bg-white/20" />
+        </div>
+
       <header className="flex items-start justify-between gap-3 border-b border-black/10 p-4 dark:border-white/10">
         <div>
           <h2 className="text-sm font-semibold">Catalog</h2>
@@ -144,7 +215,7 @@ function CatalogPanel({ open, onClose, onOpen, swapTargetLabel, onPick, onAddPos
               </button>
             ))}
           </div>
-          <ul className="mt-3 grid grid-cols-2 gap-3">
+          <ul className="mt-3 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
             {POSTER_ART.map((a) => (
               <li key={a.id}>
                 <button
@@ -216,7 +287,7 @@ function CatalogPanel({ open, onClose, onOpen, swapTargetLabel, onPick, onAddPos
         {items.length === 0 ? (
           <p className="p-4 text-center text-sm text-neutral-500">Nothing matches that.</p>
         ) : (
-          <ul className="grid grid-cols-2 gap-3">
+          <ul className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
             {items.map((item) => (
               <li key={item.id}>
                 <button
