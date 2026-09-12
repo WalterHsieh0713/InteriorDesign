@@ -5,7 +5,7 @@ import RoomPlan
 /// coaching overlay) with a Cancel/Done bar on top.
 struct RoomScanView: View {
     @StateObject private var model = RoomCaptureModel()
-    let onFinish: (CapturedRoom) -> Void
+    let onFinish: (CapturedRoom, [Data]) -> Void
     let onCancel: () -> Void
 
     var body: some View {
@@ -32,7 +32,7 @@ struct RoomScanView: View {
         }
         .onAppear { model.startSession() }
         .onReceive(model.$finishedRoom.compactMap { $0 }) { room in
-            onFinish(room)
+            onFinish(room, model.sampledFrames)
         }
         .alert("Scan Error", isPresented: Binding(
             get: { model.captureError != nil },

@@ -65,9 +65,9 @@ struct ContentView: View {
         .padding()
         .fullScreenCover(isPresented: $showScanner) {
             RoomScanView(
-                onFinish: { room in
+                onFinish: { room, frames in
                     showScanner = false
-                    export(room)
+                    export(room, frames: frames)
                 },
                 onCancel: {
                     showScanner = false
@@ -81,7 +81,7 @@ struct ContentView: View {
         }
     }
 
-    private func export(_ room: CapturedRoom) {
+    private func export(_ room: CapturedRoom, frames: [Data]) {
         errorMessage = nil
         isUploading = true
 
@@ -91,6 +91,25 @@ struct ContentView: View {
                 await MainActor.run { diagnostics = debugSummary }
                 let session = UUID().uuidString
                 try await LayoutUploader.upload(layout, session: session)
+
+                // Colors are a bonus on top of a room that already works —
+                // if the frames or the colorize call fail, the layout is
+                // still uploaded and shareable, so don't fail the scan over
+                // it. Just note it in the diagnostics.
+                var colorNote = "colors: skipped (no frames captured)"
+                if !frames.isEmpty {
+                    do {
+                        for frame in frames {
+                            try await LayoutUploader.uploadPhoto(frame, session: session)
+                        }
+                        try await LayoutUploader.colorize(session: session)
+                        colorNote = "colors: applied from \(frames.count) frames"
+                    } catch {
+                        colorNote = "colors: failed — \(error.localizedDescription)"
+                    }
+                }
+                await MainActor.run { diagnostics = debugSummary + "\n" + colorNote }
+
                 let url = LayoutUploader.shareableRoomURL(session: session)
 
                 await MainActor.run {

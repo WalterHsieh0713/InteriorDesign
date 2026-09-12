@@ -40,6 +40,57 @@ enum LayoutUploader {
         }
     }
 
+    /// Posts one sampled camera frame to the same endpoint the web capture
+    /// flow uses, keyed by session, so /api/colorize has imagery to read
+    /// real colors from.
+    static func uploadPhoto(_ jpeg: Data, session: String) async throws {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/upload"))
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        func append(_ string: String) {
+            body.append(Data(string.utf8))
+        }
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"session\"\r\n\r\n")
+        append("\(session)\r\n")
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"file\"; filename=\"frame.jpg\"\r\n")
+        append("Content-Type: image/jpeg\r\n\r\n")
+        body.append(jpeg)
+        append("\r\n--\(boundary)--\r\n")
+        request.httpBody = body
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw LayoutUploaderError.serverError(
+                status: status,
+                message: String(data: data, encoding: .utf8) ?? "Photo upload failed"
+            )
+        }
+    }
+
+    /// Asks the server to read real colors off the uploaded frames and merge
+    /// them into the already-stored layout. Geometry is left untouched.
+    static func colorize(session: String) async throws {
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/colorize"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["session": session])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw LayoutUploaderError.serverError(
+                status: status,
+                message: String(data: data, encoding: .utf8) ?? "Colorize failed"
+            )
+        }
+    }
+
     static func shareableRoomURL(session: String) -> URL {
         var components = URLComponents(url: baseURL.appendingPathComponent("room"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "session", value: session)]
