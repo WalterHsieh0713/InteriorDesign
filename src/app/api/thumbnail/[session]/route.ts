@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { RoomLayoutSchema } from "@/lib/roomLayoutSchema";
 import { floorPlanSvg } from "@/lib/floorPlan";
+import { withRetry } from "@/lib/retry";
 
 /**
  * Top-down floor plan for a design, as an SVG image.
@@ -16,11 +17,9 @@ import { floorPlanSvg } from "@/lib/floorPlan";
 export async function GET(_req: Request, ctx: RouteContext<"/api/thumbnail/[session]">) {
   const { session } = await ctx.params;
 
-  const { data, error } = await supabaseAdmin()
-    .from("rooms")
-    .select("layout")
-    .eq("session_id", session)
-    .maybeSingle();
+  const { data, error } = await withRetry(() =>
+    supabaseAdmin().from("rooms").select("layout").eq("session_id", session).maybeSingle()
+  );
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

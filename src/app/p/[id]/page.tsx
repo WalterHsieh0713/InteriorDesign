@@ -55,7 +55,9 @@ export default async function PostPage({ params }: PageProps<"/p/[id]">) {
       }
     >
       <div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_260px]">
-        <div className="sheet rounded-[2px] p-3">
+        {/* Capped: an unbounded square plan eats the whole viewport height on
+            a wide screen and pushes the title block out of view. */}
+        <div className="sheet mx-auto w-full max-w-[560px] rounded-[2px] p-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={post.thumbnail_url}

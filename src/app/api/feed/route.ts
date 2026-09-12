@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import type { Post } from "@/lib/postMetadata";
+import { withRetry } from "@/lib/retry";
 
 /**
  * The feed. One table, no joins — everything it sorts and filters on was
@@ -81,7 +82,7 @@ export async function GET(req: NextRequest) {
   const from = page * PAGE_SIZE;
   query = query.range(from, from + PAGE_SIZE - 1);
 
-  const { data, error, count } = await query;
+  const { data, error, count } = await withRetry(() => query);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { RoomLayoutSchema } from "@/lib/roomLayoutSchema";
 import { ROOM_TYPES, buildPostMetadata, normalizeStyleTags } from "@/lib/postMetadata";
+import { withRetry } from "@/lib/retry";
 
 /** Publish a design to the feed. */
 
@@ -31,11 +32,9 @@ export async function POST(req: NextRequest) {
   // The design must exist and still be valid. Publishing a post that points
   // at a missing or malformed layout produces a card with a broken
   // thumbnail and no way to open it.
-  const { data: room, error: roomError } = await supabase
-    .from("rooms")
-    .select("layout")
-    .eq("session_id", session)
-    .maybeSingle();
+  const { data: room, error: roomError } = await withRetry(() =>
+    supabase.from("rooms").select("layout").eq("session_id", session).maybeSingle()
+  );
 
   if (roomError) {
     return NextResponse.json({ error: roomError.message }, { status: 500 });
@@ -57,9 +56,8 @@ export async function POST(req: NextRequest) {
 
   const meta = buildPostMetadata(layout.data, roomType, normalizeStyleTags(styleTags));
 
-  const { data, error } = await supabase
-    .from("posts")
-    .insert({
+  const { data, error } = await withRetry(() =>
+    supabase.from("posts").insert({
       session_id: session,
       author_handle: authorHandle,
       caption: caption || null,
@@ -72,8 +70,9 @@ export async function POST(req: NextRequest) {
       total_budget_cents: meta.totalBudgetCents,
       object_count: meta.objectCount,
     })
-    .select("id")
-    .single();
+      .select("id")
+      .single()
+  );
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
