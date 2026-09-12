@@ -1,4 +1,6 @@
+import { createContext, useContext, useMemo } from "react";
 import * as THREE from "three";
+import { CATEGORY_TEXTURE, getTexture } from "./textures";
 
 type Props = {
   category: string;
@@ -6,6 +8,11 @@ type Props = {
   color: string;
   opacity: number;
 };
+
+// Every primitive inside one piece of furniture shares its detail map, so
+// it's resolved once at the top and read back down rather than threaded
+// through every Panel call.
+const DetailMap = createContext<THREE.Texture | null>(null);
 
 function shade(hex: string, percent: number) {
   const num = parseInt(hex.replace("#", ""), 16);
@@ -34,11 +41,13 @@ function Panel({
   metalness?: number;
   transparent?: boolean;
 }) {
+  const map = useContext(DetailMap);
   return (
     <mesh position={offset} castShadow receiveShadow>
       <boxGeometry args={size.map((v) => Math.max(v, 0.01)) as [number, number, number]} />
       <meshStandardMaterial
         color={color}
+        map={map}
         transparent={transparent || opacity < 1}
         opacity={opacity}
         roughness={roughness}
@@ -87,7 +96,19 @@ function Legs({
   );
 }
 
-export default function FurnitureMesh({ category, dimensions, color, opacity }: Props) {
+export default function FurnitureMesh(props: Props) {
+  const map = useMemo(
+    () => getTexture(CATEGORY_TEXTURE[props.category] ?? "plaster", 2),
+    [props.category]
+  );
+  return (
+    <DetailMap.Provider value={map}>
+      <FurnitureGeometry {...props} />
+    </DetailMap.Provider>
+  );
+}
+
+function FurnitureGeometry({ category, dimensions, color, opacity }: Props) {
   const [w, h, d] = dimensions;
   const dark = shade(color, -18);
 

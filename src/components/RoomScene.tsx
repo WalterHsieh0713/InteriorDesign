@@ -6,21 +6,26 @@ import { OrbitControls, Html, Environment, SoftShadows } from "@react-three/drei
 import * as THREE from "three";
 import type { RoomLayout } from "@/lib/roomLayoutSchema";
 import FurnitureMesh from "./FurnitureMesh";
+import { getTexture, type TextureKind } from "./textures";
 
+// Plausible real-furniture tones, used only when we have no sampled color
+// for an object. The previous palette was a categorical data-viz set — lime
+// tables, canary chairs — which is what made scans read as a debug render
+// rather than a room.
 const CATEGORY_COLORS: Record<string, string> = {
-  bed: "#c77dff",
-  desk: "#4cc9f0",
-  chair: "#f9c74f",
-  sofa: "#f3722c",
-  table: "#90be6d",
-  shelf: "#577590",
-  dresser: "#f94144",
-  tv: "#212529",
-  lamp: "#ffd60a",
-  rug: "#a5a58d",
-  door: "#6d4c41",
-  window: "#8ecae6",
-  other: "#adb5bd",
+  bed: "#b9bec7",
+  desk: "#a97a5a",
+  chair: "#c8a06a",
+  sofa: "#8b8f98",
+  table: "#b08a5e",
+  shelf: "#9c7b55",
+  dresser: "#8f6b4a",
+  tv: "#1b1d20",
+  lamp: "#e8dcc4",
+  rug: "#9a938a",
+  door: "#7a5638",
+  window: "#aecbd8",
+  other: "#b0aca6",
 };
 
 // How rough each floor material reads under light — carpet swallows
@@ -34,21 +39,40 @@ const FLOOR_ROUGHNESS: Record<string, number> = {
   other: 0.8,
 };
 
+const FLOOR_TEXTURE: Record<string, TextureKind> = {
+  carpet: "carpet",
+  wood: "wood",
+  tile: "tile",
+  concrete: "plaster",
+  vinyl: "plaster",
+  other: "carpet",
+};
+
 function Walls({ room }: { room: RoomLayout["room"] }) {
   const { width, length, height } = room;
-  const wallColor = room.wallColor ?? "#dcdcdc";
-  const floorColor = room.floorColor ?? "#f1f1f1";
-  const floorRoughness = FLOOR_ROUGHNESS[room.floorMaterial ?? "other"] ?? 0.8;
+  const wallColor = room.wallColor ?? "#d8d4cd";
+  const floorColor = room.floorColor ?? "#9c968d";
+  const material = room.floorMaterial ?? "other";
+  const floorRoughness = FLOOR_ROUGHNESS[material] ?? 0.8;
+
+  // A floor tiles far more than a chair seat does — scale the repeat to the
+  // room so the grain stays a believable size instead of stretching.
+  const floorMap = useMemo(
+    () => getTexture(FLOOR_TEXTURE[material] ?? "carpet", Math.max(4, Math.round(Math.max(width, length) / 1.5))),
+    [material, width, length]
+  );
+  const wallMap = useMemo(() => getTexture("plaster", 6), []);
 
   // Walls stay translucent so you can see in from outside while orbiting,
   // and single-sided from inside so the near wall doesn't block the view.
   const wall = (
     <meshStandardMaterial
       color={wallColor}
+      map={wallMap}
       side={THREE.DoubleSide}
       transparent
       opacity={0.4}
-      roughness={0.9}
+      roughness={0.95}
     />
   );
 
@@ -56,7 +80,12 @@ function Walls({ room }: { room: RoomLayout["room"] }) {
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[width, length]} />
-        <meshStandardMaterial color={floorColor} side={THREE.DoubleSide} roughness={floorRoughness} />
+        <meshStandardMaterial
+          color={floorColor}
+          map={floorMap}
+          side={THREE.DoubleSide}
+          roughness={floorRoughness}
+        />
       </mesh>
       <mesh position={[0, height / 2, -length / 2]} receiveShadow>
         <planeGeometry args={[width, height]} />
