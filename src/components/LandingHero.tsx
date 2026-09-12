@@ -16,10 +16,10 @@ import Link from "next/link";
  *   3.70  burst complete, the pieces out in a ring
  *   8.00  settled
  *
- * Scroll is borrowed, not stolen. While chapters remain, a downward wheel
- * advances one and the page stays put; once the last chapter is reached the
- * wheel is released and the page scrolls on to the scanner below. Anyone who
- * would rather not sit through it has a skip control throughout.
+ * Chapters advance only on click (anywhere in the hero, the prompt, a chapter
+ * dot, or the arrow keys) — scrolling is left alone throughout, so the page
+ * always moves normally underneath. Anyone who would rather not sit through
+ * it has a skip control throughout.
  */
 
 const STOPS = [0, 2.3, 3.7, 8] as const;
@@ -54,12 +54,11 @@ const CHAPTERS: Chapter[] = [
   },
   {
     title: "Every piece, accounted for.",
-    body: "RoomPlan measures the shell down to the centimetre. Gemini finds what LiDAR cannot see — the thermostat, the outlet, the books — and back-projects them onto geometry we already trust. The catalog prices whatever you put back in.",
+    body: "Roomii measures the shell down to the centimetre. Gemini finds what LiDAR cannot see — the thermostat, the outlet, the books — and back-projects them onto geometry we already trust. The catalog prices whatever you put back in.",
   },
 ];
 
 export function LandingHero({ onScan }: { onScan: () => void }) {
-  const hostRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const [phase, setPhase] = useState(0);
@@ -148,31 +147,6 @@ export function LandingHero({ onScan }: { onScan: () => void }) {
     else done();
   }, []);
 
-  // Wheel is borrowed while chapters remain and handed back afterwards, so the
-  // page below is always reachable.
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
-
-    let lock = false;
-    const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaY) < 8) return;
-      if (e.deltaY > 0 && phase >= LAST) return; // done — let the page scroll
-      if (e.deltaY < 0 && phase === 0) return; // at the top — let it be
-      e.preventDefault();
-      if (lock) return;
-      lock = true;
-      window.setTimeout(() => {
-        lock = false;
-      }, 420);
-      if (e.deltaY > 0) advance();
-      else goTo(phase - 1);
-    };
-
-    host.addEventListener("wheel", onWheel, { passive: false });
-    return () => host.removeEventListener("wheel", onWheel);
-  }, [phase, advance, goTo]);
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement;
@@ -199,7 +173,6 @@ export function LandingHero({ onScan }: { onScan: () => void }) {
 
   return (
     <section
-      ref={hostRef}
       aria-label="What Roomii does"
       className="relative h-[100svh] w-full overflow-hidden bg-black"
       onClick={(e) => {
@@ -353,7 +326,7 @@ export function LandingHero({ onScan }: { onScan: () => void }) {
               onClick={phase >= LAST ? skip : advance}
               className="tb pointer-events-auto hero-shadow-sm text-[11px] uppercase tracking-[0.22em] text-[var(--fg-2)] transition-colors hover:text-[var(--fg)]"
             >
-              {phase >= LAST ? "Scroll on" : phase === 0 ? "Scroll or click to begin" : "Scroll or click to continue"}
+              {phase >= LAST ? "Continue" : phase === 0 ? "Click to begin" : "Click to continue"}
             </button>
           </>
         )}
