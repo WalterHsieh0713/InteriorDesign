@@ -740,11 +740,9 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     let cancelled = false;
     const frames = layout?.cameraFrames;
-    if (!frames?.length) {
-      setCameras([]);
-      return;
-    }
-    prepareCameras(frames).then((prepared) => {
+    // Both branches resolve through a promise so setCameras is only ever
+    // called from a callback, never synchronously in the effect body.
+    (frames?.length ? prepareCameras(frames) : Promise.resolve([])).then((prepared) => {
       if (!cancelled) setCameras(prepared);
     });
     return () => {

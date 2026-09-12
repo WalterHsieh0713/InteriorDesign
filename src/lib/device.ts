@@ -17,6 +17,7 @@
 const DEVICE_KEY = "plans.deviceId";
 const HANDLE_KEY = "plans.handle";
 const LIKED_KEY = "plans.liked";
+const MY_SESSION_KEY = "plans.mySession";
 
 function read(key: string): string | null {
   try {
@@ -136,4 +137,21 @@ export function getHandleSnapshot(): string {
 
 export function getHandleServerSnapshot(): string {
   return "";
+}
+
+/**
+ * The visitor's own scanned room, if we know of one.
+ *
+ * Recorded when they open the composer or publish. It is what lets For You
+ * mean "rooms like yours" instead of "newest": we compare their room's
+ * dimensions against everyone else's. Absent for anyone who has only ever
+ * browsed, and the feed falls back to recency for them.
+ */
+export function setMySession(sessionId: string): void {
+  write(MY_SESSION_KEY, sessionId);
+}
+
+export function getMySession(): string | null {
+  const id = read(MY_SESSION_KEY);
+  return id && id.trim() ? id : null;
 }

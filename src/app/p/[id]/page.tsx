@@ -4,6 +4,8 @@ import type { Metadata } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import type { Post } from "@/lib/postMetadata";
 import { PlansShell } from "@/components/social/PlansShell";
+import { CommentThread } from "@/components/social/CommentThread";
+import { SimilarRooms } from "@/components/social/SimilarRooms";
 
 async function loadPost(id: string): Promise<Post | null> {
   // A malformed uuid makes Postgres raise rather than return no rows, so a
@@ -60,7 +62,7 @@ export default async function PostPage({ params }: PageProps<"/p/[id]">) {
         <div className="sheet mx-auto w-full max-w-[560px] rounded-[2px] p-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={post.thumbnail_url}
+            src={post.render_url ?? post.thumbnail_url}
             alt={`Floor plan of a ${post.room_type}, ${Math.round(post.area_m2)} square metres`}
             className="aspect-square w-full bg-[var(--paper)] object-contain"
           />
@@ -70,7 +72,13 @@ export default async function PostPage({ params }: PageProps<"/p/[id]">) {
           <div>
             {post.caption && <p className="text-base leading-snug">{post.caption}</p>}
             <p className="tb mt-2 text-[12px] text-[var(--pencil)]">
-              @{post.author_handle} ·{" "}
+              <Link
+                href={`/u/${encodeURIComponent(post.author_handle)}`}
+                className="hover:text-[var(--blueline)] hover:underline"
+              >
+                @{post.author_handle}
+              </Link>{" "}
+              ·{" "}
               {new Date(post.created_at).toLocaleDateString("en-US", {
                 month: "short",
                 day: "numeric",
@@ -117,6 +125,10 @@ export default async function PostPage({ params }: PageProps<"/p/[id]">) {
           </div>
         </aside>
       </div>
+
+      <SimilarRooms post={post} />
+
+      <CommentThread postId={post.id} initialCount={post.comment_count ?? 0} />
     </PlansShell>
   );
 }

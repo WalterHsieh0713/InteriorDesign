@@ -18,8 +18,8 @@ share, adds a caption and a room type, and it appears in a grid other people
 can filter, sort and stamp (our word for like). Each card shows a top-down
 floor plan generated from the layout JSON.
 
-It is live and working against the shared Supabase project, seeded with 14
-posts built from the real layouts already in `rooms`.
+It is live and working against the shared Supabase project, seeded from the
+real layouts already in `rooms` — so the post count grows as you add scans.
 
 ---
 
@@ -95,12 +95,16 @@ src/lib/retry.ts                     retry Supabase through transient gateway er
 src/app/api/feed/route.ts            the feed query
 src/app/api/posts/route.ts           publish
 src/app/api/posts/[id]/like/route.ts stamp / unstamp
+src/app/api/posts/[id]/comments/    comment thread
 src/app/api/thumbnail/[session]/     floor plan as an image
 src/app/feed/                        the grid
 src/app/share/                       the composer
 src/app/p/[id]/                      a single post
+src/app/u/[handle]/                  one person's plans
+src/lib/similarity.ts                ranking rooms by resemblance
 src/components/social/               all of our UI
 scripts/create-social-tables.sql     posts + post_likes
+scripts/create-comments-table.sql    post_comments + comment_count + render_url
 scripts/seed-social.mjs              seed from real layouts
 ```
 
@@ -120,7 +124,7 @@ need to change our block, that is fine, just keep the scoping.
 
 ### Database
 
-We added `posts` and `post_likes`. We did not alter `rooms`. Both new tables
+We added `posts`, `post_likes` and `post_comments`. We did not alter `rooms`. Both new tables
 have RLS enabled with zero policies, matching how `rooms` is set up: all
 access goes through API routes on the service-role key.
 
@@ -143,9 +147,11 @@ budget filter hidden, because a filter that always returns nothing reads as
 broken.
 
 **2. A 3D thumbnail at save time.** `gl.domElement.toBlob()`, square,
-1024×1024, uploaded like a photo. Give us the URL and we will store it in
-`posts.thumbnail_url` instead of the floor-plan route. Genuinely optional —
-the SVG plans look good and are arguably more legible in a small card.
+1024×1024, uploaded like a photo. Write the URL to `posts.render_url` and it
+takes over immediately — the card and the post page already resolve
+`render_url ?? thumbnail_url`, so the floor plan becomes the fallback with no
+change on our side. Genuinely optional: the SVG plans look good and are
+arguably more legible at card size.
 
 ---
 
@@ -165,12 +171,14 @@ Worth knowing regardless of which half you work on.
   in one afternoon, once mid-publish, which surfaced to the user as a failed
   post for a perfectly valid request. `src/lib/retry.ts` wraps our calls.
   Consider it for yours — `/api/layout` writes on every drag.
-- **`npm run build` does not run lint.** `npm run lint` reports two
-  pre-existing `react-hooks/set-state-in-effect` errors in `page.tsx:21` and
-  `RoomScene.tsx:187`, both in your files. They are not ours and we have not
-  touched them, but they will keep failing lint until someone does. The fix
-  pattern that worked for us: read external state with `useSyncExternalStore`,
-  and derive loading flags instead of storing them.
+- **`npm run build` does not run lint** — run `npm run lint` separately. It
+  is at zero errors now, including the two `react-hooks/set-state-in-effect`
+  ones that used to sit in `page.tsx` and `RoomScene.tsx`. Please keep it
+  there: a permanently-red lint means nobody reads it and new problems hide.
+  The two patterns that fixed those: read external state (localStorage, a
+  lazily-created id) through `useSyncExternalStore` rather than copying it
+  into state in an effect, and adjust state during render instead of in an
+  effect when it derives from a prop.
 
 ---
 
@@ -210,3 +218,103 @@ has to be visited by hand. The budget filter is hidden pending bindings. Seed
 data assigns plausible room types to LiDAR scans that give nothing to infer
 from — that is fabrication, acceptable only because it exists to exercise the
 filters.
+
+### v2 — 2026-09-12 — filters, tabs, comments
+
+**Filters** collapsed behind one button with an active count — a popover on
+desktop, a bottom sheet on phones. They previously sat inline and wrapped
+onto three rows on a small screen, crowding the plans they existed to help
+you find.
+
+**Tabs** cut from five to three: For You · This month · All time. Today and
+This week held too few plans to rank meaningfully. `/api/feed` still accepts
+both values, so an existing link keeps working.
+
+**Comments** shipped. `post_comments`, plus `comment_count` and `render_url`
+on `posts` — see `scripts/create-comments-table.sql`. Threads live on the
+post page, attribution reuses the same pseudonymous handle as the composer,
+and `device_id` lets someone delete their own comment without an account.
+`device_id` is never returned to the client; it is collapsed to a `mine`
+boolean, or anyone could delete anyone's comment. A delete from the wrong
+device matches no rows and reports success rather than revealing that the
+comment exists.
+
+**`render_url` is the hook for your 3D thumbnails.** Both the card and the
+post page already resolve `render_url ?? thumbnail_url`, so the moment you
+start writing a capture URL there, it takes over and the floor plan becomes
+the fallback. Nothing on our side needs to change.
+
+**Known limits.** Anyone can type any handle, so comments carry no real
+attribution — that is the accepted ceiling of the no-accounts decision, and
+the fix is real accounts rather than a patch. There is no moderation UI; the
+`hidden` column exists so a row can be suppressed by hand in the SQL editor.
+
+**Not built, deliberately:** similarity-ranked "For You", `/u/[handle]`
+profiles, saves, and auto-tagging. Auto-tagging looks feasible from layout
+data alone (object density, colour variance, area) but not from imagery —
+LiDAR sessions upload no photos at all, so a vision approach would tag half
+the feed and silently skip the rest.
+
+### v3 — IN PROGRESS — discovery: similarity, profiles, affinity feed
+
+**If you are picking this up cold, read this section first.** It is written
+to be resumable: each step below is independently useful, independently
+committed, and safe to stop after. Tick the boxes as you land them.
+
+The goal is the use case the product is uniquely able to serve and currently
+serves worst: *"I have a room this size — what did other people do with
+theirs?"* Nobody else can answer that, because nobody else has real measured
+rooms. Today it is buried in an area-band dropdown.
+
+- [x] **3a — DONE.** `src/lib/similarity.ts` + `SimilarRooms` on the post page.
+      One scorer, reused everywhere. Same `room_type` scores highest, then
+      closeness in `area_m2`, then overlapping `style_tags`, then similar
+      object density. Candidates are pre-filtered in SQL to a generous area
+      band and scored in TypeScript — at this volume that is simpler and far
+      easier to tune than pushing weights into Postgres.
+- [x] **3b — DONE.** `/u/[handle]` profile page, linked from every byline. `author_handle` is already on
+      every post, so this is one query. It turns a wall of plans into a set
+      of people, which is the part of "community" that is currently missing
+      entirely. Link it from the card byline and the post page.
+- [x] **3c — DONE.** `session_id` persisted to `localStorage` on publish
+      (`setMySession` in `device.ts`), sent as `mySession` on the For You
+      tab, and used to re-rank the page already fetched — see the v3c entry
+      below for what was fixed and verified.
+
+**Deliberately not in v3:** saves/collections, auto-tagging, and real
+accounts. Auto-tagging is feasible from layout data alone (object density,
+colour variance, area) but not from imagery, because LiDAR sessions upload no
+photos — a vision approach would tag half the feed and silently skip the rest.
+
+**Constraint worth knowing:** the identity ceiling still applies. Profiles
+are keyed on a self-declared handle stored in one browser, so two people can
+claim the same name and one person on two devices is two people. That is the
+accepted cost of no accounts, and it is the thing to fix first if this feed
+ever matters.
+
+### v3c — 2026-09-12 — finished and verified against the live database
+
+Picked up from "Unfinished Claude Phase 3 Update" (`244ec1d`) — the wiring
+(`device.ts`, `ShareComposer.tsx`, `FeedView.tsx`, `api/feed/route.ts`) was
+already there and needed one fix, not a rebuild.
+
+**Bug fixed:** `rankSimilar()` is documented to exclude the target's own
+post (`candidates.filter(c => c.id !== target.id)`), but the `mine` query in
+`api/feed/route.ts` never selected `id` — so `target.id` was `undefined` and
+nothing was ever excluded. A post scores maximally similar to itself, so
+publishing a room could pin it at #1 of your own "rooms like yours" feed.
+Fixed by selecting `id` alongside the other columns.
+
+**Verified against the live database**, not just curled locally against
+seed data: `GET /api/feed?tab=foryou` with a real `mySession` (a published
+`office`, 0.59 m² post) re-ranks the page toward other `office` posts ahead
+of larger rooms that were more recent, and the `mySession` post itself is
+now absent from its own results. Without `mySession`, ordering is untouched
+(plain recency), matching "fall back to newest when we do not know the
+visitor's room."
+
+**Confirms the existing design trade-off is working as intended, not a
+bug:** this re-ranks only the already-fetched page (`PAGE_SIZE = 24`), not
+the whole table — a well-matched post sitting on page 5 won't surface
+early. That's the documented cost of not scoring the entire table per
+request, unchanged here.

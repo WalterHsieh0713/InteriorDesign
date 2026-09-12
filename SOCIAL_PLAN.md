@@ -1,5 +1,13 @@
 # Social layer — build plan
 
+> **Status: shipped.** All phases below are built, verified and on `main`.
+> This file is kept as the design rationale — why the feed snapshots instead
+> of joining, what the seam is, how the tables are shaped.
+>
+> For current status, the integration contract, and the revision journal,
+> read **[SOCIAL_INTEGRATION.md](SOCIAL_INTEGRATION.md)** instead. That is
+> the living document; this one is the original reasoning.
+
 Share a finished room design, browse other people's designs in a filterable
 feed, like the good ones.
 
@@ -123,55 +131,32 @@ goes through API routes on the service-role key.
 
 ---
 
-## Build order
+## Build order — all shipped
 
-### Phase 0 — Unblock
+Each phase landed in the order below.
 
-- Fill in `.env.local`: `NEXT_PUBLIC_SUPABASE_URL`,
-  `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`. (The anon key is unused by
-  the current code.)
-- Run `scripts/create-social-tables.sql` in the Supabase SQL Editor.
-- Run the seed script to populate fixture designs and posts.
+| Phase | What | Status |
+|---|---|---|
+| 0 | `.env.local`, `posts` + `post_likes` tables, seed from real layouts | shipped |
+| 1 | Floor-plan SVG generator (`src/lib/floorPlan.ts`) | shipped |
+| 2 | Feed grid + `GET /api/feed` | shipped |
+| 3 | Tabs and ranking | shipped |
+| 4 | Filters | shipped |
+| 5 | Stamps (likes) | shipped |
+| 6 | Composer + `POST /api/posts` | shipped |
+| 7 | Post detail page | shipped |
 
-### Phase 1 — Floor-plan thumbnails (1–2 hrs)
+Two things changed during the build and are worth recording here, since the
+sections above describe the original intent:
 
-A pure function: `RoomLayout` → SVG string. Room outline, one rotated
-rectangle per object, filled by category colour. No 3D, no browser, no
-teammates.
-
-Highest-value thing to build first: it removes the only hard external
-dependency, and a top-down plan is more legible in a small grid card than a
-shrunken 3D render.
-
-### Phase 2 — Feed grid + `GET /api/feed` (2–3 hrs)
-
-Built against seeded rows. Cursor pagination from the start — retrofitting
-it means rewriting the query and the scroll handler.
-
-### Phase 3 — Tabs and ranking (1 hr)
-
-Four windowed queries plus For You. Swipeable tab bar.
-
-### Phase 4 — Filters (2 hrs)
-
-Room type, area range, style tags. Filter state in the URL. The budget
-filter stays hidden until at least one post has a non-null
-`total_budget_cents` — a visible filter that returns nothing reads as
-broken.
-
-### Phase 5 — Likes (1 hr)
-
-`POST /api/posts/[id]/like`, optimistic UI, deduped by the composite key.
-
-### Phase 6 — Composer + `POST /api/posts` (2 hrs)
-
-The write path. Works against any `rooms` row, seeded or real.
-
-### Phase 7 — Post detail (1 hr)
-
-Roughly **10–12 hours** total with no teammate contact.
-
----
+- **Thumbnails are generated per request, not stored.** An SVG plan is a few
+  KB of string building, so there was nothing to gain from baking and
+  uploading one, and a live plan keeps matching the design after the owner
+  rearranges the room. The `thumbnail_url` column stayed, so a 3D capture can
+  replace it later without touching the feed.
+- **Paging is offset, not a keyset cursor.** Four of the five tabs sort by
+  stamp count, which a `created_at` cursor cannot page. Revisit past a few
+  thousand rows.
 
 ## What needs teammates
 
