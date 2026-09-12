@@ -4,7 +4,7 @@ import { ACCESSORY_ITEMS } from "./catalog.accessories";
 import { IKEA_ITEMS } from "./catalog.ikea";
 import { IKEA_MODEL_URLS } from "./ikeaModels.generated";
 import { MANUAL_ITEMS } from "./catalog.manual";
-import type { ObjectCategory } from "./roomLayoutSchema";
+import type { ItemBinding, ObjectCategory } from "./roomLayoutSchema";
 
 // Hand-authored items win over generated ones with the same id — that is how a
 // bad auto-built row gets corrected without editing generated output.
@@ -125,4 +125,49 @@ export function searchCatalog(query: string): CatalogItem[] {
 
 export function formatPrice(cents: number): string {
   return `$${(cents / 100).toFixed(2).replace(/\.00$/, "")}`;
+}
+
+/** Just the parts of a room object that say what it is. */
+type IdentifiableObject = {
+  category: string;
+  label?: string;
+  binding: ItemBinding;
+};
+
+/**
+ * What to call an object in the UI.
+ *
+ * A human correction wins over everything else: `label` exists precisely
+ * because detection gets things wrong — a bin read as a stool, a radiator as
+ * a shelf — so once somebody has said what a thing is, the category is not
+ * allowed to argue. After that the product's real name, then whatever a
+ * custom item was called, and finally the bare category, which is all a
+ * scanned object ever has.
+ */
+export function objectDisplayName(obj: IdentifiableObject): string {
+  if (obj.label?.trim()) return obj.label.trim();
+
+  if (obj.binding.source === "catalog") {
+    const item = CATALOG_BY_ID.get(obj.binding.catalogItemId);
+    if (item) return item.name;
+  } else if (obj.binding.source === "custom" && obj.binding.label.trim()) {
+    return obj.binding.label.trim();
+  }
+
+  return obj.category;
+}
+
+/**
+ * What this object costs, or null when it has no price.
+ *
+ * Null covers two different situations the caller has to tell apart: scanned
+ * furniture, which was never bought here, and a custom item nobody has priced
+ * yet. Both are null rather than 0, because 0 claims something is free.
+ * The binding's own price is used rather than the catalog's current one, since
+ * the binding is what was snapshotted when the item was placed and what a
+ * correction in the shopping list edits.
+ */
+export function objectPriceCents(obj: IdentifiableObject): number | null {
+  if (obj.binding.source === "owned") return null;
+  return obj.binding.priceCents;
 }

@@ -5,7 +5,7 @@ import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Html, Environment } from "@react-three/drei";
 import * as THREE from "three";
 import type { ItemBinding, RoomLayout } from "@/lib/roomLayoutSchema";
-import { CATALOG_BY_ID, formatPrice } from "@/lib/catalog";
+import { CATALOG_BY_ID, formatPrice, objectDisplayName, objectPriceCents } from "@/lib/catalog";
 import { meshForItem, toBinding, toDimensions, type CatalogItem } from "@/lib/catalogItem";
 import {
   clampToRoom,
@@ -805,7 +805,7 @@ function DraggableObject({
               whiteSpace: "nowrap",
             }}
           >
-            {obj.label ?? obj.category}
+            {objectDisplayName(obj)}
           </div>
         </Html>
       )}
@@ -1531,6 +1531,11 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
     [layout, selectedId]
   );
 
+  const selectedPrice = useMemo(
+    () => (selected ? objectPriceCents(selected) : null),
+    [selected]
+  );
+
   // OrbitControls owns the camera distance, so zooming goes through it rather
   // than moving the camera behind its back and having it snap on next update.
   const zoom = useCallback((inward: boolean) => {
@@ -1636,7 +1641,10 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="relative w-screen h-screen">
-      <div className="absolute top-3 left-3 z-10 min-w-[190px] rounded-xl border border-black/5 bg-white/95 px-4 py-3 shadow-lg backdrop-blur dark:border-white/10 dark:bg-neutral-900/95">
+      {/* Both readouts share one column so the selection panel stacks under
+          the room rather than covering it. */}
+      <div className="absolute top-3 left-3 z-10 flex w-[230px] flex-col gap-2">
+      <div className="rounded-xl border border-black/5 bg-white/95 px-4 py-3 shadow-lg backdrop-blur dark:border-white/10 dark:bg-neutral-900/95">
         <div className="font-mono text-sm font-semibold tracking-tight tabular-nums text-neutral-900 dark:text-neutral-100">
           {layout.room.width.toFixed(1)} × {layout.room.length.toFixed(1)} × {layout.room.height.toFixed(1)} m
         </div>
@@ -1661,6 +1669,48 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
         >
           {roomPanelOpen ? "Close room settings" : "Room settings"}
         </button>
+      </div>
+
+      {/* What you have selected: what it is, how big it is, what it cost.
+          Dimensions come off the object itself, so this reads the same for a
+          catalog product and for a piece of furniture the scan found. */}
+      {selected && (
+        <div className="rounded-xl border border-black/5 bg-white/95 px-4 py-3 shadow-lg backdrop-blur dark:border-white/10 dark:bg-neutral-900/95">
+          <div className="text-[10px] font-medium uppercase tracking-wider text-neutral-400">
+            Selected · {selected.category}
+          </div>
+          <div className="mt-1 text-sm font-semibold leading-snug text-neutral-900 dark:text-neutral-100">
+            {objectDisplayName(selected)}
+          </div>
+
+          <div className="mt-2 font-mono text-[12px] tabular-nums text-neutral-600 dark:text-neutral-300">
+            {selected.dimensions[0].toFixed(2)} × {selected.dimensions[1].toFixed(2)} ×{" "}
+            {selected.dimensions[2].toFixed(2)} m
+          </div>
+          {/* Spelled out because [w, h, d] puts height in the middle, which is
+              the single most common thing to read wrong about this schema. */}
+          <div className="mt-0.5 text-[10px] uppercase tracking-wider text-neutral-400">
+            width × height × depth
+          </div>
+
+          <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-black/10 pt-2 dark:border-white/10">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-neutral-400">
+              Price
+            </span>
+            {selectedPrice !== null ? (
+              <span className="font-mono text-base font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                {formatPrice(selectedPrice)}
+              </span>
+            ) : (
+              // Never "$0" — one of these was never bought and the other has
+              // not been priced, and free is a claim neither of them makes.
+              <span className="text-right text-[11px] leading-snug text-neutral-400">
+                {selected.binding.source === "owned" ? "Already in the room" : "No price set"}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
       </div>
       <Canvas
         key={canvasKey}
