@@ -38,58 +38,98 @@ export default function AccessoryMesh({
   const emissiveIntensity = selected ? 0.4 : 0;
 
   if (kind === "diffuser") {
-    // Ultrasonic diffusers are a wood-grain foot under a domed ceramic body.
-    const bodyR = Math.min(w, d) / 2;
+    // The ASAKUKI is a wide frosted drum that rounds over into a dome, sitting
+    // on a slightly tapered wood-grain foot — not a hemisphere. The silhouette
+    // is the whole recognisability of this object at room scale, so the body is
+    // lathed from a measured profile rather than approximated by a primitive.
+    const r = Math.min(w, d) / 2;
+    const footH = h * 0.34;
+    const bodyH = h - footH;
+
+    // Profile in the body's own space, bottom at 0. Straight-sided for the
+    // lower half, then turning in to a flat-topped dome.
+    const profile = [
+      [1.0, 0.0], [1.0, 0.42], [0.985, 0.6], [0.945, 0.74],
+      [0.87, 0.855], [0.74, 0.94], [0.54, 0.985], [0.3, 1.0], [0.0, 1.0],
+    ].map(([rr, yy]) => new THREE.Vector2(rr * r, yy * bodyH));
+
     return (
       <group>
-        <mesh position={[0, -h * 0.38, 0]} castShadow receiveShadow>
-          <cylinderGeometry args={[bodyR * 0.92, bodyR * 0.86, h * 0.24, 28]} />
-          <meshStandardMaterial color="#9C7A52" roughness={0.75} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+        {/* Wood foot, wider at the top where the body meets it. */}
+        <mesh position={[0, -h / 2 + footH / 2, 0]} castShadow receiveShadow>
+          <cylinderGeometry args={[r, r * 0.93, footH, 40]} />
+          <meshStandardMaterial color="#C9A579" roughness={0.72} emissive={emissive} emissiveIntensity={emissiveIntensity} />
         </mesh>
-        <mesh position={[0, h * 0.06, 0]} castShadow receiveShadow>
-          <sphereGeometry args={[bodyR, 28, 20, 0, Math.PI * 2, 0, Math.PI * 0.62]} />
+        {/* Control buttons along the front of the foot. */}
+        {[-0.42, -0.14, 0.14, 0.42].map((t) => (
+          <mesh key={t} position={[t * r, -h / 2 + footH * 0.42, d / 2 - 0.004]} castShadow>
+            <boxGeometry args={[r * 0.2, footH * 0.24, 0.006]} />
+            <meshStandardMaterial color="#B08F63" roughness={0.6} />
+          </mesh>
+        ))}
+        {/* Frosted body. Lit from inside, which is what these actually do. */}
+        <mesh position={[0, -h / 2 + footH, 0]} castShadow receiveShadow>
+          <latheGeometry args={[profile, 44]} />
           <meshStandardMaterial
             color={color}
-            roughness={0.35}
-            emissive={on ? "#5a4a86" : emissive}
-            emissiveIntensity={on ? 0.5 : emissiveIntensity}
+            roughness={0.42}
+            emissive={on ? "#F0E4D0" : emissive}
+            emissiveIntensity={on ? 0.34 : emissiveIntensity}
           />
         </mesh>
-        {/* The mist plume, which is most of what you actually notice. */}
+        {/* The mist vent — a small slot off-centre on the dome. */}
+        <mesh position={[0, h / 2 - 0.001, d * 0.06]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[r * 0.5, r * 0.14]} />
+          <meshStandardMaterial color="#E4E0DA" roughness={0.5} />
+        </mesh>
         {on && (
-          <mesh position={[0, h * 0.62, 0]} raycast={() => null}>
-            <coneGeometry args={[bodyR * 0.36, h * 0.7, 14, 1, true]} />
-            <meshStandardMaterial
-              color="#E9E4F5"
-              transparent
-              opacity={0.22}
-              side={THREE.DoubleSide}
-              depthWrite={false}
-            />
+          <mesh position={[0, h / 2 + h * 0.34, d * 0.06]} raycast={() => null}>
+            <coneGeometry args={[r * 0.3, h * 0.68, 16, 1, true]} />
+            <meshStandardMaterial color="#EFEBF7" transparent opacity={0.2} side={THREE.DoubleSide} depthWrite={false} />
           </mesh>
         )}
-        {on && <pointLight position={[0, h * 0.2, 0]} color="#a78bfa" intensity={0.7} distance={0.9} decay={2} />}
+        {on && <pointLight position={[0, 0, 0]} color="#ffd9a8" intensity={0.8} distance={1.1} decay={2} />}
       </group>
     );
   }
 
-  // Projector: a rounded body on a tilting yoke, lens facing -Z (its facing
-  // direction), matching how rotationY is read everywhere else.
-  const bodyW = w * 0.82;
+  // Projector: a body held in a tilt cradle on a round foot, lens facing -Z,
+  // which is the direction rotationY points everywhere else in the scene.
+  const bodyH = h * 0.7;
+  const lensR = Math.min(bodyH, w) * 0.3;
   return (
     <group>
-      <mesh position={[0, -h * 0.42, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[w * 0.34, w * 0.38, h * 0.16, 22]} />
-        <meshStandardMaterial color="#D8D8D6" roughness={0.6} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+      <mesh position={[0, -h / 2 + h * 0.05, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[w * 0.42, w * 0.48, h * 0.1, 28]} />
+        <meshStandardMaterial color="#D8D8D6" roughness={0.55} emissive={emissive} emissiveIntensity={emissiveIntensity} />
       </mesh>
-      <mesh position={[0, h * 0.08, 0]} castShadow receiveShadow>
-        <boxGeometry args={[bodyW, h * 0.66, d * 0.78]} />
-        <meshStandardMaterial color={color} roughness={0.4} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+      {/* Cradle arms, which is what lets these tilt up at a wall. */}
+      {[-1, 1].map((s) => (
+        <mesh key={s} position={[s * w * 0.46, h * 0.05, 0]} castShadow>
+          <boxGeometry args={[w * 0.07, bodyH * 0.8, d * 0.34]} />
+          <meshStandardMaterial color="#CFCFCC" roughness={0.5} />
+        </mesh>
+      ))}
+      <mesh position={[0, h * 0.1, 0]} castShadow receiveShadow>
+        <boxGeometry args={[w * 0.86, bodyH, d * 0.9]} />
+        <meshStandardMaterial color={color} roughness={0.38} emissive={emissive} emissiveIntensity={emissiveIntensity} />
       </mesh>
-      <mesh position={[0, h * 0.08, -d * 0.4]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-        <cylinderGeometry args={[h * 0.19, h * 0.19, d * 0.06, 22]} />
-        <meshStandardMaterial color="#2A2C31" roughness={0.2} metalness={0.5} />
+      {/* Lens barrel and glass. */}
+      <mesh position={[0, h * 0.1, -d * 0.46]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+        <cylinderGeometry args={[lensR, lensR * 1.1, d * 0.08, 26]} />
+        <meshStandardMaterial color="#3A3D44" roughness={0.35} metalness={0.4} />
       </mesh>
+      <mesh position={[0, h * 0.1, -d * 0.5]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[lensR * 0.72, lensR * 0.72, d * 0.01, 26]} />
+        <meshStandardMaterial color="#151A24" roughness={0.08} metalness={0.7} emissive="#1d3c6b" emissiveIntensity={0.5} />
+      </mesh>
+      {/* Vent slots down the side, the detail that stops it reading as a box. */}
+      {[-0.22, 0, 0.22].map((t) => (
+        <mesh key={t} position={[w * 0.44, h * 0.1, t * d]}>
+          <boxGeometry args={[0.002, bodyH * 0.42, d * 0.06]} />
+          <meshStandardMaterial color="#8E9298" roughness={0.7} />
+        </mesh>
+      ))}
     </group>
   );
 }

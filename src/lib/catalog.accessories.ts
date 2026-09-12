@@ -35,16 +35,15 @@ export const ACCESSORY_ITEMS: CatalogItem[] = [
     priceCents: 8399,
     productUrl: "https://www.amazon.com/dp/B0F7RR3YC6",
     imageUrl: null,
-    // The listing does not publish a body size, so this is a typical mini
-    // projector's footprint and is flagged as estimated. The numbers that
-    // matter for this product — its throw ratio — come from the listing's own
-    // projection-distance table and are exact. See projection.ts.
-    dimensions: [0.145, 0.12, 0.145],
+    // Listing states a "compact size of 8*4*4 inches". The two 4" figures are
+    // unambiguous; the 8" is read as depth, since that is the axis a projector
+    // is long along — body plus lens barrel, pointing at the wall.
+    dimensions: [0.102, 0.102, 0.203],
     modelId: null,
     mount: "tabletop",
     dominantHex: "#F2F2F0",
     styleTags: ["projector", "movies", "tech"],
-    measuredAxes: [],
-    verified: false,
+    measuredAxes: ["width", "height", "depth"],
+    verified: true,
   },
 ];
