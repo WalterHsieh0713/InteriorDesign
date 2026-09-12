@@ -219,7 +219,10 @@ function Floor({
     return geometry;
   }, [walls, width, length]);
 
-  const material = (
+  // Shared by both branches below so the two can't drift apart. Named
+  // `surface` rather than `material` because `material` is already the floor's
+  // material *kind* ("wood", "tile") a few lines up.
+  const surface = (
     <meshStandardMaterial
       color={floorPhoto ? "#ffffff" : floorColor}
       map={floorPhoto ?? floorMap}
@@ -231,7 +234,7 @@ function Floor({
   if (shaped) {
     return (
       <mesh geometry={shaped} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        {material}
+        {surface}
       </mesh>
     );
   }
@@ -239,7 +242,7 @@ function Floor({
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <planeGeometry args={[width, length]} />
-      {material}
+      {surface}
     </mesh>
   );
 }
@@ -543,17 +546,12 @@ function Scene({
   cameras,
   selectedId,
   onSelect,
-  rotateNonce,
   onPositionsSettled,
 }: {
   layout: RoomLayout;
   cameras: PreparedCamera[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
-  /// Bumped by the HUD's rotate buttons, carrying the signed step to apply.
-  /// A counter rather than an angle so repeated taps of the same direction
-  /// each register instead of collapsing into one unchanged value.
-  rotateNonce: { count: number; delta: number };
   onPositionsSettled: (objects: RoomLayout["objects"]) => void;
 }) {
   const [objects, setObjects] = useState(layout.objects);
@@ -608,25 +606,11 @@ function Scene({
     };
   }, [layout.room, layout.objects]);
 
+  // Rotation is applied to `layout` by the parent rather than here, and flows
+  // back down through this sync — so there's exactly one path for "an object
+  // changed", shared with dragging, instead of an effect racing to fold a
+  // rotation into local state.
   useEffect(() => setObjects(layout.objects), [layout]);
-
-  // Applies a rotation step to whatever's selected and persists it the same
-  // way a finished drag does. Keyed off the nonce's count so that holding the
-  // same direction still fires on every press.
-  const lastRotate = useRef(0);
-  useEffect(() => {
-    if (rotateNonce.count === lastRotate.current) return;
-    lastRotate.current = rotateNonce.count;
-    if (!selectedId) return;
-
-    setObjects((prev) => {
-      const next = prev.map((o) =>
-        o.id === selectedId ? { ...o, rotationY: o.rotationY + rotateNonce.delta } : o
-      );
-      onPositionsSettled(next);
-      return next;
-    });
-  }, [rotateNonce, selectedId, onPositionsSettled]);
 
   const handleDragStart = useCallback((id: string, y: number) => {
     setDraggingId(id);
@@ -797,37 +781,6 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
   const [canvasKey, setCanvasKey] = useState(0);
   const [cameras, setCameras] = useState<PreparedCamera[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [rotateNonce, setRotateNonce] = useState({ count: 0, delta: 0 });
-
-  // 15° steps: fine enough to square something up against a wall, coarse
-  // enough that a few taps do something visible.
-  const ROTATION_STEP = Math.PI / 12;
-  const rotate = useCallback((direction: 1 | -1) => {
-    setRotateNonce((prev) => ({ count: prev.count + 1, delta: direction * ROTATION_STEP }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Keyboard alternative to the on-screen buttons. Ignored while typing, in
-  // case an input ever lands on this page.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (!selectedId) return;
-      const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
-
-      if (e.key === "q" || e.key === "Q" || e.key === "ArrowLeft") {
-        e.preventDefault();
-        rotate(-1);
-      } else if (e.key === "e" || e.key === "E" || e.key === "ArrowRight") {
-        e.preventDefault();
-        rotate(1);
-      } else if (e.key === "Escape") {
-        setSelectedId(null);
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, rotate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -889,6 +842,46 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
     () => layout?.objects.find((o) => o.id === selectedId) ?? null,
     [layout, selectedId]
   );
+
+  // 15° steps: fine enough to square something up against a wall, coarse
+  // enough that a couple of taps visibly do something. Goes through
+  // handlePositionsSettled, the same path a finished drag takes, so rotating
+  // saves exactly like moving does and the 3D view picks it up from `layout`.
+  const rotate = useCallback(
+    (direction: 1 | -1) => {
+      if (!layout || !selectedId) return;
+      const step = (direction * Math.PI) / 12;
+      handlePositionsSettled(
+        layout.objects.map((o) =>
+          o.id === selectedId ? { ...o, rotationY: o.rotationY + step } : o
+        )
+      );
+    },
+    [layout, selectedId, handlePositionsSettled]
+  );
+
+  // Keyboard alternative to the on-screen buttons, ignored while typing in
+  // case an input ever lands on this page.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      if (e.key === "Escape") {
+        setSelectedId(null);
+        return;
+      }
+      if (!selectedId) return;
+      if (e.key === "q" || e.key === "Q" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        rotate(-1);
+      } else if (e.key === "e" || e.key === "E" || e.key === "ArrowRight") {
+        e.preventDefault();
+        rotate(1);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedId, rotate]);
 
   const initialCameraPosition = useMemo(() => {
     if (!layout) return [8, 8, 8] as const;
@@ -972,7 +965,6 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           cameras={cameras}
           selectedId={selectedId}
           onSelect={setSelectedId}
-          rotateNonce={rotateNonce}
           onPositionsSettled={handlePositionsSettled}
         />
       </Canvas>
