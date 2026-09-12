@@ -5,6 +5,7 @@ import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
 import { OrbitControls, Html } from "@react-three/drei";
 import * as THREE from "three";
 import type { RoomLayout } from "@/lib/roomLayoutSchema";
+import FurnitureMesh from "./FurnitureMesh";
 
 const CATEGORY_COLORS: Record<string, string> = {
   bed: "#c77dff",
@@ -58,21 +59,20 @@ function DraggableObject({
   isDragging: boolean;
   onDragStart: (id: string, y: number) => void;
 }) {
-  const [w, h, d] = obj.dimensions;
+  const [, h] = obj.dimensions;
   const color = CATEGORY_COLORS[obj.category] ?? CATEGORY_COLORS.other;
 
   return (
-    <group position={obj.position} rotation={[0, obj.rotationY, 0]}>
-      <mesh
-        onPointerDown={(e: ThreeEvent<PointerEvent>) => {
-          e.stopPropagation();
-          (e.target as Element).setPointerCapture?.(e.pointerId);
-          onDragStart(obj.id, obj.position[1]);
-        }}
-      >
-        <boxGeometry args={[w, h, d]} />
-        <meshStandardMaterial color={color} transparent opacity={isDragging ? 0.6 : 1} />
-      </mesh>
+    <group
+      position={obj.position}
+      rotation={[0, obj.rotationY, 0]}
+      onPointerDown={(e: ThreeEvent<PointerEvent>) => {
+        e.stopPropagation();
+        (e.target as Element).setPointerCapture?.(e.pointerId);
+        onDragStart(obj.id, obj.position[1]);
+      }}
+    >
+      <FurnitureMesh category={obj.category} dimensions={obj.dimensions} color={color} opacity={isDragging ? 0.6 : 1} />
       <Html position={[0, h / 2 + 0.15, 0]} center distanceFactor={8} style={{ pointerEvents: "none" }}>
         <div
           style={{
