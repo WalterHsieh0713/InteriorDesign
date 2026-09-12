@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import type { Post } from "@/lib/postMetadata";
 import { withRetry } from "@/lib/retry";
+import { rankSimilar, type SimilarityTarget } from "@/lib/similarity";
 
 /**
  * The feed. One table, no joins — everything it sorts and filters on was
@@ -88,8 +89,30 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const posts = (data ?? []) as Post[];
+  let posts = (data ?? []) as Post[];
   const total = count ?? 0;
+
+  // For You means "rooms like yours" when we know which room is yours —
+  // the browser sends the session it published. We rank the page that was
+  // already fetched rather than re-querying: reordering 24 rows the visitor
+  // was going to see anyway costs nothing, where scoring the whole table
+  // would. Anyone who has only browsed has no session and keeps recency.
+  const mySession = sp.get("mySession");
+  if (tab === "foryou" && mySession && posts.length > 1) {
+    const { data: mine } = await withRetry(() =>
+      supabaseAdmin()
+        .from("posts")
+        .select("room_type, area_m2, style_tags, object_count")
+        .eq("session_id", mySession)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    );
+
+    if (mine) {
+      posts = rankSimilar(mine as SimilarityTarget, posts, posts.length);
+    }
+  }
 
   return NextResponse.json({
     posts,

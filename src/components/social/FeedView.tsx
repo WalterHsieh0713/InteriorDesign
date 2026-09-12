@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { Post } from "@/lib/postMetadata";
 import {
   getDeviceId,
+  getMySession,
   getLikedServerSnapshot,
   getLikedSnapshot,
   setLikedId,
@@ -69,6 +70,12 @@ export function FeedView() {
       q.set("tab", tab);
       q.set("page", String(pageIndex));
       if (roomType) q.set("roomType", roomType);
+      // Only For You is personalised; the ranked tabs are the same for
+      // everyone, and sending it there would imply otherwise.
+      if (tab === "foryou") {
+        const mine = getMySession();
+        if (mine) q.set("mySession", mine);
+      }
       const chosen = AREA_BANDS.find((b) => b.id === band);
       if (chosen?.min !== undefined) q.set("minArea", String(chosen.min));
       if (chosen?.max !== undefined) q.set("maxArea", String(chosen.max));

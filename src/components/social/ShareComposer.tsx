@@ -8,6 +8,7 @@ import {
   getHandleServerSnapshot,
   getHandleSnapshot,
   setHandle as persistHandle,
+  setMySession,
   subscribeHandle,
 } from "@/lib/device";
 
@@ -52,6 +53,8 @@ export function ShareComposer({ session }: { session: string }) {
     setSubmitting(true);
     setError(null);
     persistHandle(handle);
+    // Remember whose room this is, so For You can rank by resemblance to it.
+    setMySession(session);
 
     try {
       const res = await fetch("/api/posts", {
