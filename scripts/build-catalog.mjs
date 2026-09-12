@@ -51,6 +51,28 @@ const TYPICAL_HEIGHT = {
   lamp: 0.5, rug: 0.01, ottoman: 0.42,
 };
 
+// A category is too coarse for height on its own: a floor lamp and a table
+// lamp are both "lamp" and differ by a metre. IKEA states the distinction in
+// the product type, so read it rather than averaging the two into something
+// that is wrong for both.
+function typicalHeight(category, label) {
+  const n = (label || "").toLowerCase();
+  if (category === "lamp") {
+    if (/floor lamp/.test(n)) return 1.5;
+    if (/table lamp|desk lamp|work lamp|wall lamp/.test(n)) return 0.45;
+  }
+  if (category === "stool") {
+    if (/bar stool|counter/.test(n)) return 0.75;
+    if (/step stool/.test(n)) return 0.5;
+  }
+  return TYPICAL_HEIGHT[category];
+}
+
+// Footprints to fall back on when the storefront states no measurement at all.
+// Borrowing the stand-in model's footprint put 2.65m rugs into a 3.2m room;
+// these are ordinary dorm sizes. Inferred, so they stay out of measuredAxes.
+const TYPICAL_FOOTPRINT = { rug: [1.7, 2.4] };
+
 const FINISH = { white:"#F2F2F0", black:"#2B2B2D", "black-brown":"#3B2F2A",
   "dark grey":"#4A4E52", grey:"#8A8D8F", gray:"#8A8D8F", beige:"#C9C6BE",
   oak:"#C8A87C", birch:"#DFCCA8", pine:"#D6BC8E", walnut:"#6B4A2F",
@@ -179,7 +201,9 @@ for (const [q, category, want] of QUERIES) {
     // TYPICAL_HEIGHT). Unstated width/depth fall back to the stand-in model's
     // absolute footprint, which is a fair proxy — footprints vary far less
     // within a category than heights do.
-    h ??= TYPICAL_HEIGHT[category];
+    h ??= typicalHeight(category, `${p.name} ${p.typeName ?? ""}`);
+    const fp = TYPICAL_FOOTPRINT[category];
+    if (fp) { w ??= fp[0]; d ??= fp[1]; }
     if (model) {
       const [mw, mh, md] = model.dimensions;
       w ??= mw; h ??= mh; d ??= md;

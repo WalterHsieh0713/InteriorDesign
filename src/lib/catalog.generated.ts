@@ -540,7 +540,7 @@ export const GENERATED_ITEMS: CatalogItem[] = [
     "imageUrl": "https://www.ikea.com/us/en/images/products/barlast-floor-lamp-black-white__0957676_pe805130_s5.jpg",
     "dimensions": [
       0.355,
-      0.5,
+      1.5,
       0.355
     ],
     "modelId": "abo-b07dbdv3fh",
@@ -564,7 +564,7 @@ export const GENERATED_ITEMS: CatalogItem[] = [
     "imageUrl": "https://www.ikea.com/us/en/images/products/oekensand-floor-lamp-beech-white__1187892_pe899535_s5.jpg",
     "dimensions": [
       0.299,
-      0.5,
+      1.5,
       0.341
     ],
     "modelId": "abo-b07hkgy4yz",
@@ -588,7 +588,7 @@ export const GENERATED_ITEMS: CatalogItem[] = [
     "imageUrl": "https://www.ikea.com/us/en/images/products/fado-table-lamp-white__0606976_pe682645_s5.jpg",
     "dimensions": [
       0.208,
-      0.5,
+      0.45,
       0.208
     ],
     "modelId": "abo-b07mbfd87n",
@@ -611,9 +611,9 @@ export const GENERATED_ITEMS: CatalogItem[] = [
     "productUrl": "https://www.ikea.com/us/en/p/tiphede-rug-flatwoven-natural-black-40559166/",
     "imageUrl": "https://www.ikea.com/us/en/images/products/tiphede-rug-flatwoven-natural-black__0772066_pe755879_s5.jpg",
     "dimensions": [
-      2.651,
+      1.7,
       0.01,
-      1.971
+      2.4
     ],
     "modelId": "abo-b0735t6948",
     "mount": "floor",
@@ -635,9 +635,9 @@ export const GENERATED_ITEMS: CatalogItem[] = [
     "productUrl": "https://www.ikea.com/us/en/p/aerende-rug-high-pile-off-white-80635451/",
     "imageUrl": "https://www.ikea.com/us/en/images/products/aerende-rug-high-pile-off-white__1495132_pe1004961_s5.jpg",
     "dimensions": [
-      2.437,
+      1.7,
       0.01,
-      0.774
+      2.4
     ],
     "modelId": "abo-b07b4yltp5",
     "mount": "floor",
@@ -659,9 +659,9 @@ export const GENERATED_ITEMS: CatalogItem[] = [
     "productUrl": "https://www.ikea.com/us/en/p/stoense-rug-low-pile-green-90607688/",
     "imageUrl": "https://www.ikea.com/us/en/images/products/stoense-rug-low-pile-green__1405714_pe970548_s5.jpg",
     "dimensions": [
-      2.433,
+      1.7,
       0.01,
-      1.516
+      2.4
     ],
     "modelId": "abo-b07b4zr624",
     "mount": "floor",
