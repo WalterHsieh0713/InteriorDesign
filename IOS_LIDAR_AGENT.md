@@ -26,131 +26,68 @@ You should be on that branch right now, or check it out:
 git checkout archive/swift-roomplan
 ```
 
-## Your job, in two parts
+## Status: the conversion code is written. Your job is Xcode + verification.
 
-### Part 1 — get it building and running (mechanical, should be quick)
+A prior session (no Xcode access, working blind from source review only)
+already rewrote the export pipeline to match the web app's schema and to
+upload directly instead of sharing a local file:
 
-Everything is documented in `README.md` **on this branch** (not on
-`main` — it was removed there during the pivot, this is the only copy).
-Follow it exactly: new Xcode project, add the files in `RoomScanner/`,
-link `RoomPlan.framework`, add the one `NSCameraUsageDescription`
-Info.plist key, iOS 17 deployment target, free-Apple-ID signing, run on
-the physical LiDAR device (iPhone 12 Pro+ or iPad Pro 2020+ — **the
-Simulator cannot do any of this**, RoomPlan requires real hardware).
+- `Models.swift` — `RoomLayoutJSON`/`ObjectJSON` now match
+  `src/lib/roomLayoutSchema.ts` on `main` exactly (`room.width/length/
+  height`, `objects[].id/category/position/rotationY/dimensions/
+  confidence`).
+- `RoomExporter.swift` — `buildLayout(from:)` computes room dimensions
+  from the walls' bounding box, decomposes each object/door/window's
+  `transform` into `position` + `rotationY`, maps Apple's confidence enum
+  to a `0..1` double, and remaps Apple's object categories down to the
+  web app's fixed enum (full mapping table and reasoning is in the code
+  comments there).
+- `LayoutUploader.swift` (new file) — `PUT`s the converted layout straight
+  to `<baseURL>/api/layout` and builds the shareable
+  `<baseURL>/room?session=<id>` link.
+- `ContentView.swift` — now uploads on scan completion instead of writing
+  a local file, shows an "Uploading to room…" state, shares the real link
+  on success.
 
-At this point the app scans a room and exports JSON via a share sheet —
-that JSON schema is now **stale** and needs to change. That's Part 2.
+**None of this has ever been compiled.** There was no Xcode/macOS access
+to verify any of it against the real SDK. Treat your first build as the
+actual test, not a formality — expect to fix real compile errors,
+possibly API-signature mismatches against whatever the current RoomPlan
+SDK actually looks like.
 
-### Part 2 — fix the JSON schema mismatch (the actual work)
+### What's actually left for you to do
 
-The archived app's export (`RoomScanner/Models.swift` +
-`RoomScanner/RoomExporter.swift`) produces a shape from *before* the web
-app existed. The web app now expects a different, fixed contract —
-`src/lib/roomLayoutSchema.ts` on `main` (also copied below). **Nothing
-downstream can change — the web editor, the zod validation, the 3D
-renderer all depend on this exact shape.** Your job is to make the iOS
-export match it, not the other way around.
-
-**Old shape (what's currently exported):**
-```
-{ roomId, createdAt,
-  walls: [{id, dimensions:[w,h,d], transform:[16 floats]}],
-  doors: [ same ], windows: [ same ], openings: [ same ],
-  objects: [{id, category, confidence:"high"|"medium"|"low",
-             dimensions:[w,h,d], transform:[16 floats]}] }
-```
-
-**Target shape (what the web app needs):**
-```json
-{
-  "room": {"width": meters, "length": meters, "height": meters},
-  "objects": [{"id","category","position":[x,y,z],"rotationY":radians,
-               "dimensions":[w,h,d],"confidence":0..1}]
-}
-```
-`category` must be one of exactly: `bed, desk, chair, sofa, table, shelf,
-dresser, tv, lamp, rug, door, window, other`. Y-up, floor at y=0, origin
-at room center — same convention the app already uses internally, no
-coordinate conversion needed there.
-
-**Concrete conversion work:**
-
-1. **Room dimensions have no direct source — compute them from the
-   walls.** `CapturedRoom` has no single "room size" property. For each
-   wall, transform its two edge-midpoints (local `(-width/2, 0, 0)` and
-   `(width/2, 0, 0)`) by the wall's full `transform` into world space,
-   collect all these points across every wall, and take the min/max X and
-   min/max Z — that span is `room.width`/`room.length`. `room.height` =
-   the tallest wall's `dimensions.y`. Verify this against a real scan;
-   the exact endpoint convention may need adjusting once you see real
-   wall transforms.
-
-2. **`transform` (4×4 matrix) → `position` + `rotationY` (the new schema
-   has no matrix field at all).**
-   - `position` is just the translation column: `[transform.columns.3.x,
-     transform.columns.3.y, transform.columns.3.z]`.
-   - `rotationY` needs extracting from the rotation part. A starting
-     point: `atan2(-transform.columns.0.z, transform.columns.0.x)` (this
-     assumes RoomPlan's objects only rotate about the vertical axis,
-     which should hold for furniture resting on a floor — but **verify
-     the sign convention against a real scan**, e.g. rotate a known
-     object ~90° between scans and confirm the sign comes out right. I
-     can't verify this without a device in hand — treat this formula as
-     a starting guess, not gospel).
-
-3. **`confidence`: string → number.** Old schema kept Apple's
-   `high`/`medium`/`low` as strings; new schema wants `0..1`. Reasonable
-   default mapping: high→0.9, medium→0.6, low→0.3 — adjust if it doesn't
-   feel right.
-
-4. **Category enum doesn't match at all — needs a full remap.** Apple's
-   `CapturedRoom.Object.Category` (what the old exporter already produces
-   as strings) → the new fixed enum:
-
-   | Apple's category | → new category |
-   |---|---|
-   | bed | bed |
-   | table | table |
-   | sofa | sofa |
-   | chair | chair |
-   | television | tv |
-   | storage | shelf |
-   | refrigerator, stove, sink, washerdryer, toilet, bathtub, oven, dishwasher, fireplace, stairs | other |
-
-5. **Fold `doors` and `windows` into `objects`** (the new schema has no
-   separate arrays for them) — map each using the same
-   position/rotationY/dimensions/confidence extraction as furniture,
-   with `category: "door"` or `category: "window"` respectively. **Drop
-   `walls` and `openings`** from the objects list — walls only feed the
-   room-dimension calculation above; treat `openings` as `door` if you
-   want them represented, or drop them, your call.
-
-6. **Rewrite `RoomJSON`/`ObjectJSON` in `Models.swift`** to match the
-   target shape exactly (field names matter — the web app's zod schema
-   will reject anything that doesn't match `room.width/length/height` and
-   `objects[].position/rotationY/dimensions/confidence/category/id`
-   precisely).
-
-## Part 3 — ship straight to the live web app instead of a JSON file
-
-Currently the app exports to a share sheet as a local file. Replace that
-with a direct HTTP call so a scan becomes an immediately-shareable link:
-
-1. Generate a session UUID for the scan (`UUID().uuidString`).
-2. `PUT` the converted JSON to `<deployed-vercel-url>/api/layout` with
-   body `{"session": "<uuid>", "layout": {...}}` — **ask the project
-   owner for the exact deployed URL, it's not recorded in this repo.**
-   This is the same endpoint the web editor already uses to persist
-   drag-and-drop edits, so it already validates your JSON against the
-   real zod schema server-side — a malformed conversion comes back as a
-   clear 400 with the specific field that's wrong, which is the fastest
-   way to debug your Part 2 math.
-3. On success, share `<deployed-vercel-url>/room?session=<uuid>` (a real
-   URL, not a file) via the share sheet — that opens directly into the
-   3D editor on whatever device you AirDrop/send it to.
-4. No photos, no Gemini call needed for this path at all — it bypasses
-   `/api/infer-layout` entirely, since RoomPlan already gives structured
-   data instead of something that needs AI-vision guessing.
+1. **Set the base URL.** `RoomScanner/LayoutUploader.swift` has a
+   placeholder (`https://YOUR-DEPLOYED-URL.vercel.app`) — ask the project
+   owner for the real deployed Vercel URL and set it before building.
+2. **Follow `README.md` on this branch** for the mechanical Xcode setup:
+   new project, add the 8 `.swift` files, link `RoomPlan.framework`, the
+   one `NSCameraUsageDescription` Info.plist key, iOS 17 deployment
+   target, free-Apple-ID signing, run on a **physical** LiDAR device
+   (iPhone 12 Pro+ or iPad Pro 2020+ — the Simulator can't do any of
+   this).
+3. **Fix whatever doesn't compile.** Genuinely unknown scope — could be
+   nothing, could be real API mismatches.
+4. **Verify the rotation math against a real scan** — this is the one
+   piece of logic that's a best-effort derivation, not something that
+   could be checked without a device: `RoomExporter.swift`'s
+   `positionAndRotationY` extracts a yaw angle via
+   `atan2(-transform.columns.0.z, transform.columns.0.x)`, assuming
+   objects only rotate about the vertical axis. Scan a room with an
+   object rotated a known amount (e.g. a chair turned ~90° from another),
+   check the sign/magnitude comes out right in the uploaded layout. If
+   it's flipped or off, that's a one-line fix once you can see real
+   numbers — I couldn't get further than "this is the standard formula
+   for this scenario" without a device to confirm against.
+5. **Verify the room-bounding-box calculation** the same way — scan an
+   actual room you know the rough dimensions of, sanity-check the
+   `room.width/length/height` that lands in the `rooms` table isn't
+   wildly off (the whole reason this path exists is that Gemini's guess
+   was off by 3-4x — confirm this one is actually better before assuming
+   it is).
+6. **End-to-end test:** scan → upload succeeds (or gives a clear 400 you
+   can debug) → open `<baseURL>/room?session=<id>` in a browser → your
+   real room renders with real dimensions.
 
 ## Do not touch
 

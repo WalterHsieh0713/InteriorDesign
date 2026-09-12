@@ -1,7 +1,10 @@
-# RoomScanner — LiDAR room scan → JSON → three.js viewer
+# RoomScanner — LiDAR room scan → live 3D web editor
 
-Hackathon first-slice: scan a room with RoomPlan, export a fixed JSON schema,
-AirDrop it off the phone, render it in a throwaway three.js page.
+Scan a room with RoomPlan, convert it to the web app's JSON layout schema,
+and upload it straight to the deployed web app's `/api/layout` endpoint —
+the app then shares a real `/room?session=<id>` link that opens directly
+into the 3D editor. See `IOS_LIDAR_AGENT.md` on this branch for the full
+story of why this exists and what the conversion logic does.
 
 ## Folder contents
 
@@ -9,16 +12,31 @@ AirDrop it off the phone, render it in a throwaway three.js page.
 InteriorDesignTest/
   RoomScanner/                  <- source files to add to a new Xcode project
     RoomScannerApp.swift        <- @main entry point
-    ContentView.swift           <- launch screen + LiDAR support check + export/share
+    ContentView.swift           <- launch screen + LiDAR support check + upload/share
     RoomScanView.swift          <- full-screen live scan UI (RoomCaptureView + Done/Cancel)
     RoomCaptureModel.swift      <- owns RoomCaptureSession, RoomCaptureViewDelegate
-    RoomExporter.swift          <- CapturedRoom -> RoomJSON -> file on disk
-    Models.swift                <- Codable JSON schema + simd_float4x4 flattening
+    RoomExporter.swift          <- CapturedRoom -> RoomLayoutJSON (matches the web app's schema)
+    LayoutUploader.swift        <- PUTs the layout to the live web app, builds the share link
+    Models.swift                <- Codable structs matching src/lib/roomLayoutSchema.ts
     ShareSheet.swift            <- UIActivityViewController wrapper
     Info-additions.plist        <- reference only, shows the one Info.plist key to add
   viewer/
-    viewer.html                 <- open directly in a browser, no server needed
+    viewer.html                 <- superseded by the real web app; kept only as a fallback
+                                    static viewer if the deployed URL is ever unreachable
 ```
+
+## 0. Before you build — set the deployed URL
+
+`RoomScanner/LayoutUploader.swift` has a placeholder:
+
+```swift
+static let baseURL = URL(string: "https://YOUR-DEPLOYED-URL.vercel.app")!
+```
+
+Replace that with the actual deployed Vercel URL (ask the project owner)
+before building — the app will crash on that force-unwrap otherwise if the
+placeholder is left in and somehow resolves to nil, and will simply fail
+every upload with a network error if left pointed at a fake host.
 
 ## 1. Create the Xcode project
 
@@ -28,7 +46,7 @@ InteriorDesignTest/
 3. Save it anywhere (e.g. next to this folder, or right inside
    `InteriorDesignTest/`).
 4. Xcode generates `RoomScannerApp.swift` and `ContentView.swift` for you —
-   **delete both** (Move to Trash), then drag the 7 `.swift` files from
+   **delete both** (Move to Trash), then drag the 8 `.swift` files from
    `InteriorDesignTest/RoomScanner/` into the project navigator
    (check "Copy items if needed").
 
@@ -102,37 +120,39 @@ Steps:
 3. Tap **Done**. `RoomCaptureView` swaps into its own built-in static 3D
    review render for a moment while it post-processes the scan — that's
    expected, not a hang.
-4. As soon as the processed `CapturedRoom` is ready, the app immediately
-   converts it to JSON and opens the share sheet — AirDrop it to your Mac.
-5. If the scan barely covered anything, `walls`/`objects` may come back
+4. As soon as the processed `CapturedRoom` is ready, the app converts it to
+   the web app's JSON schema (`RoomExporter.buildLayout`), generates a new
+   session ID, and `PUT`s it to `<baseURL>/api/layout` — shows "Uploading to
+   room…" while that's in flight.
+5. On success, the share sheet opens with a real link:
+   `<baseURL>/room?session=<id>` — AirDrop/Messages/copy it, opening it
+   drops straight into the live 3D editor with your scanned room.
+6. If upload fails, you'll see the server's actual error message (this
+   endpoint validates against the same zod schema the web app's own drag
+   edits go through, so a malformed conversion shows up as a specific field
+   error, not a silent failure).
+7. If the scan barely covered anything, `objects` may come back
    near-empty — that's a scan-quality issue, not a bug; do a slower second
    pass.
 
-## 8. Viewing the JSON
-
-Just double-click `viewer/viewer.html` (or drag it into a browser) — no
-server, no build step. Click the file picker, choose the JSON you AirDropped,
-orbit with the mouse/trackpad. Walls/doors/windows/openings render as
-translucent colored planes, objects as labeled boxes.
-
-## JSON schema produced
+## JSON schema produced (matches `src/lib/roomLayoutSchema.ts` on `main`)
 
 ```json
 {
-  "roomId": "uuid",
-  "createdAt": "iso8601",
-  "walls":    [{"id":"...","dimensions":[w,h,d],"transform":[16 floats]}],
-  "doors":    [ same shape ],
-  "windows":  [ same shape ],
-  "openings": [ same shape ],
-  "objects":  [{"id":"...","category":"sofa","confidence":"high",
-                "dimensions":[w,h,d],"transform":[16 floats]}]
+  "room": {"width": meters, "length": meters, "height": meters},
+  "objects": [{"id","category","position":[x,y,z],"rotationY":radians,
+               "dimensions":[w,h,d],"confidence":0..1}]
 }
 ```
 
-`category` is `CapturedRoom.Object.Category` lowercased (`washerDryer` →
-`"washerdryer"`); `confidence` is `CapturedRoom.Confidence` lowercased
-(`high` / `medium` / `low`).
+`category` is one of exactly: `bed, desk, chair, sofa, table, shelf,
+dresser, tv, lamp, rug, door, window, other` — see the mapping table and
+the room-bounding-box / rotation-extraction math in `RoomExporter.swift`
+and `IOS_LIDAR_AGENT.md`. **The rotation-extraction formula in particular
+is unverified against a real device** — it's a reasonable derivation, not
+tested output, since none of this could be compiled or run without Xcode.
+Treat the first real scan as the actual test of that math, not this code
+review.
 
 ## Coordinate system notes (ARKit ↔ three.js)
 
@@ -142,13 +162,13 @@ handedness conversion, no extra rotation needed anywhere in this pipeline.
 Four things that *can* still bite you, none of which are axis-convention
 bugs:
 
-1. **Column-major, not row-major.** `simd_float4x4.columns` is already
-   stored column-major, so `Models.swift` flattens `columns.0, columns.1,
-   columns.2, columns.3` in order — that's the same layout
-   `THREE.Matrix4.fromArray()` expects. If you ever "clean up" that
-   extension to iterate row-by-row instead, every transform will come out
-   transposed (rotations will look right at identity and wrong everywhere
-   else — a classic silent bug).
+1. **Column-major, not row-major.** `simd_float4x4.columns` is stored
+   column-major. `RoomExporter.swift` no longer ships the raw matrix (the
+   web schema only wants `position` + `rotationY`), but the extraction math
+   still reads `columns.3` for translation and `columns.0` for the rotation
+   component — get the column indices backwards and positions will be
+   right but rotations silently wrong (correct at identity, wrong
+   everywhere else — the classic version of this bug).
 2. **Units are meters on both sides.** ARKit reports in meters; three.js is
    unitless. The viewer treats 1 unit = 1 meter and does no scaling — if you
    add your own geometry later, keep it in meters or scale explicitly.
