@@ -4,8 +4,12 @@ import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState,
 import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
 import { OrbitControls, Html, Environment } from "@react-three/drei";
 import * as THREE from "three";
-import type { RoomLayout } from "@/lib/roomLayoutSchema";
+import type { ItemBinding, RoomLayout } from "@/lib/roomLayoutSchema";
+import { CATALOG_BY_ID, formatPrice } from "@/lib/catalog";
+import { modelUrlFor, toBinding, toDimensions, type CatalogItem } from "@/lib/catalogItem";
 import FurnitureMesh from "./FurnitureMesh";
+import ProductMesh from "./ProductMesh";
+import CatalogPanel from "./CatalogPanel";
 import { getTexture, type TextureKind } from "./textures";
 import { prepareCameras, bakePlaneTexture, type PreparedCamera } from "./projectiveTexture";
 
@@ -226,15 +230,22 @@ const LAMP_LIGHT_COLOR = "#ffd9a0";
 function DraggableObject({
   obj,
   isDragging,
+  isSelected,
   onDragStart,
   cameras,
 }: {
   obj: RoomLayout["objects"][number];
   isDragging: boolean;
-  onDragStart: (id: string, y: number) => void;
+  isSelected: boolean;
+  onDragStart: (id: string, y: number, e: ThreeEvent<PointerEvent>) => void;
   cameras: PreparedCamera[];
 }) {
   const [, h] = obj.dimensions;
+  // A catalog-bound object renders as the real product's mesh; everything else
+  // keeps the procedural shape, which is still the right answer for the user's
+  // own scanned furniture and for any product with no model paired to it.
+  const item = obj.binding.source === "catalog" ? CATALOG_BY_ID.get(obj.binding.catalogItemId) : undefined;
+  const productModelUrl = item ? modelUrlFor(item) : null;
   // The object's own sampled color when we have one — that's what makes a
   // render recognizable as someone's actual room. Category palette is just
   // the fallback for older layouts and the LiDAR path.
@@ -247,18 +258,48 @@ function DraggableObject({
       onPointerDown={(e: ThreeEvent<PointerEvent>) => {
         e.stopPropagation();
         (e.target as Element).setPointerCapture?.(e.pointerId);
-        onDragStart(obj.id, obj.position[1]);
+        onDragStart(obj.id, obj.position[1], e);
       }}
     >
-      <FurnitureMesh
-        category={obj.category}
-        dimensions={obj.dimensions}
-        color={color}
-        opacity={isDragging ? 0.6 : 1}
-        cameras={cameras}
-        objectPosition={obj.position}
-        objectRotationY={obj.rotationY}
-      />
+      {productModelUrl && item ? (
+        <Suspense
+          fallback={
+            <FurnitureMesh
+              category={obj.category}
+              dimensions={obj.dimensions}
+              color={item.dominantHex}
+              opacity={0.35}
+              cameras={[]}
+              objectPosition={obj.position}
+              objectRotationY={obj.rotationY}
+            />
+          }
+        >
+          <ProductMesh
+            modelUrl={productModelUrl}
+            dimensions={obj.dimensions}
+            mount={item.mount}
+            opacity={isDragging ? 0.6 : 1}
+            selected={isSelected}
+          />
+        </Suspense>
+      ) : (
+        <FurnitureMesh
+          category={obj.category}
+          dimensions={obj.dimensions}
+          color={color}
+          opacity={isDragging ? 0.6 : 1}
+          cameras={cameras}
+          objectPosition={obj.position}
+          objectRotationY={obj.rotationY}
+        />
+      )}
+      {isSelected && (
+        <lineSegments raycast={() => null}>
+          <edgesGeometry args={[new THREE.BoxGeometry(...obj.dimensions)]} />
+          <lineBasicMaterial color="#3b82f6" linewidth={2} />
+        </lineSegments>
+      )}
       {obj.category === "lamp" && (
         <pointLight position={[0, h * 0.3, 0]} color={LAMP_LIGHT_COLOR} intensity={2.5} distance={4} decay={2} />
       )}
@@ -282,25 +323,41 @@ function DraggableObject({
 
 function Scene({
   layout,
+  objects,
   cameras,
+  selectedId,
+  onSelect,
+  onObjectsChange,
   onPositionsSettled,
 }: {
   layout: RoomLayout;
+  objects: RoomLayout["objects"];
   cameras: PreparedCamera[];
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+  onObjectsChange: (objects: RoomLayout["objects"]) => void;
   onPositionsSettled: (objects: RoomLayout["objects"]) => void;
 }) {
-  const [objects, setObjects] = useState(layout.objects);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const dragPlaneY = useRef(0);
   const dragPlane = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0));
   const intersection = useRef(new THREE.Vector3());
+  // Pressing on an object has to serve two intentions: picking it, and moving
+  // it. They are told apart at pointer-UP by whether the pointer actually
+  // travelled — a press that never moved was a click, and selects.
+  const gesture = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  // Mirrors `objects` so the pointermove listener can read the current array
+  // without being torn down and re-attached on every frame of a drag.
+  const latest = useRef(objects);
+  useEffect(() => {
+    latest.current = objects;
+  }, [objects]);
   const { camera, raycaster, gl } = useThree();
   const lightColor = layout.room.lightColor ?? "#ffffff";
 
-  useEffect(() => setObjects(layout.objects), [layout]);
-
-  const handleDragStart = useCallback((id: string, y: number) => {
+  const handleDragStart = useCallback((id: string, y: number, e: ThreeEvent<PointerEvent>) => {
     setDraggingId(id);
+    gesture.current = { x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, moved: false };
     dragPlaneY.current = y;
     dragPlane.current.set(new THREE.Vector3(0, 1, 0), -y);
   }, []);
@@ -312,24 +369,33 @@ function Scene({
     const pointer = new THREE.Vector2();
 
     function handleMove(e: PointerEvent) {
+      const g = gesture.current;
+      if (g && !g.moved) {
+        // A few pixels of slop, so a shaky click on a trackpad or a thumb on
+        // glass still reads as a click rather than a one-millimetre move.
+        if (Math.hypot(e.clientX - g.x, e.clientY - g.y) < 5) return;
+        g.moved = true;
+      }
       const rect = canvas.getBoundingClientRect();
       pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
       if (raycaster.ray.intersectPlane(dragPlane.current, intersection.current)) {
         const { x, z } = intersection.current;
-        setObjects((prev) =>
-          prev.map((o) => (o.id === draggingId ? { ...o, position: [x, dragPlaneY.current, z] } : o))
+        onObjectsChange(
+          latest.current.map((o) =>
+            o.id === draggingId ? { ...o, position: [x, dragPlaneY.current, z] as [number, number, number] } : o
+          )
         );
       }
     }
 
     function handleUp() {
+      const moved = gesture.current?.moved ?? false;
+      gesture.current = null;
       setDraggingId(null);
-      setObjects((current) => {
-        onPositionsSettled(current);
-        return current;
-      });
+      if (moved) onPositionsSettled(latest.current);
+      else onSelect(draggingId);
     }
 
     canvas.addEventListener("pointermove", handleMove);
@@ -338,7 +404,7 @@ function Scene({
       canvas.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
     };
-  }, [draggingId, camera, raycaster, gl, onPositionsSettled]);
+  }, [draggingId, camera, raycaster, gl, onPositionsSettled, onObjectsChange, onSelect]);
 
   return (
     <>
@@ -381,12 +447,23 @@ function Scene({
         intensity={0.45}
         color={lightColor}
       />
+      {/* Clicking past every object clears the selection. It sits behind the
+          furniture and only ever fires when nothing else swallowed the event. */}
+      <mesh
+        position={[0, -0.01, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        onPointerDown={() => onSelect(null)}
+      >
+        <planeGeometry args={[layout.room.width * 4, layout.room.length * 4]} />
+        <meshBasicMaterial visible={false} />
+      </mesh>
       <Walls room={layout.room} cameras={cameras} />
       {objects.map((obj) => (
         <DraggableObject
           key={obj.id}
           obj={obj}
           isDragging={draggingId === obj.id}
+          isSelected={selectedId === obj.id}
           onDragStart={handleDragStart}
           cameras={cameras}
         />
@@ -426,6 +503,10 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
   // working scene instead of a half-recovered black one.
   const [canvasKey, setCanvasKey] = useState(0);
   const [cameras, setCameras] = useState<PreparedCamera[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [snapshotting, setSnapshotting] = useState(false);
+  const glRef = useRef<THREE.WebGLRenderer | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -464,24 +545,158 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
     };
   }, [layout?.cameraFrames]);
 
-  const handlePositionsSettled = useCallback(
-    async (objects: RoomLayout["objects"]) => {
-      if (!layout) return;
-      const updated = { ...layout, objects };
-      setLayout(updated);
+  // Drag writes a new layout on every pointermove; a ref keeps the callbacks
+  // stable so that firehose doesn't tear down and rebuild the drag listeners.
+  const layoutRef = useRef<RoomLayout | null>(null);
+  useEffect(() => {
+    layoutRef.current = layout;
+  }, [layout]);
+
+  const persist = useCallback(
+    async (next: RoomLayout) => {
+      setLayout(next);
       setSaving(true);
       try {
         await fetch("/api/layout", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session: sessionId, layout: updated }),
+          body: JSON.stringify({ session: sessionId, layout: next }),
         });
       } finally {
         setSaving(false);
       }
     },
-    [layout, sessionId]
+    [sessionId]
   );
+
+  // Mid-drag. Deliberately does NOT save: a PUT per pointermove would be
+  // hundreds of writes per drag.
+  const handleObjectsChange = useCallback((objects: RoomLayout["objects"]) => {
+    setLayout((prev) => (prev ? { ...prev, objects } : prev));
+  }, []);
+
+  const handlePositionsSettled = useCallback(
+    (objects: RoomLayout["objects"]) => {
+      const current = layoutRef.current;
+      if (current) void persist({ ...current, objects });
+    },
+    [persist]
+  );
+
+  const mutateObjects = useCallback(
+    (fn: (objects: RoomLayout["objects"]) => RoomLayout["objects"]) => {
+      const current = layoutRef.current;
+      if (current) void persist({ ...current, objects: fn(current.objects) });
+    },
+    [persist]
+  );
+
+  // Where a newly-added product lands. Dropping everything at the floor in the
+  // centre would bury a wall mirror in the carpet and sink a desk lamp, so the
+  // mount decides the height; the person drags it where they actually want it.
+  const placementFor = useCallback((item: CatalogItem, room: RoomLayout["room"]): [number, number, number] => {
+    const [, height] = toDimensions(item);
+    if (item.mount === "wall") return [0, Math.min(1.5, room.height - height / 2), -room.length / 2 + 0.1];
+    if (item.mount === "tabletop") return [0, 0.75 + height / 2, 0];
+    return [0, height / 2, 0];
+  }, []);
+
+  const handlePick = useCallback(
+    (item: CatalogItem) => {
+      const current = layoutRef.current;
+      if (!current) return;
+      const binding: ItemBinding = toBinding(item);
+      const dimensions = toDimensions(item);
+
+      if (selectedId) {
+        // Swap: the new product inherits the old object's footprint position
+        // and facing, so replacing a desk doesn't fling it across the room.
+        mutateObjects((objects) =>
+          objects.map((o) =>
+            o.id === selectedId
+              ? {
+                  ...o,
+                  category: item.category,
+                  dimensions,
+                  position: [o.position[0], dimensions[1] / 2, o.position[2]] as [number, number, number],
+                  color: item.dominantHex,
+                  binding,
+                }
+              : o
+          )
+        );
+      } else {
+        mutateObjects((objects) => [
+          ...objects,
+          {
+            id: crypto.randomUUID(),
+            category: item.category,
+            position: placementFor(item, current.room),
+            rotationY: 0,
+            dimensions,
+            confidence: 1, // placed by a person, not guessed by a model
+            color: item.dominantHex,
+            binding,
+          },
+        ]);
+      }
+    },
+    [mutateObjects, placementFor, selectedId]
+  );
+
+  const rotateSelected = useCallback(
+    (radians: number) => {
+      if (!selectedId) return;
+      mutateObjects((objects) =>
+        objects.map((o) => (o.id === selectedId ? { ...o, rotationY: o.rotationY + radians } : o))
+      );
+    },
+    [mutateObjects, selectedId]
+  );
+
+  const deleteSelected = useCallback(() => {
+    if (!selectedId) return;
+    mutateObjects((objects) => objects.filter((o) => o.id !== selectedId));
+    setSelectedId(null);
+  }, [mutateObjects, selectedId]);
+
+  // Two numbers, because they answer different questions: "what would this
+  // room cost me" (only things being bought) and "what is standing in here"
+  // (everything with a known price, including furniture already owned).
+  const totals = useMemo(() => {
+    let newSpend = 0;
+    let roomTotal = 0;
+    for (const obj of layout?.objects ?? []) {
+      const price = obj.binding.source === "owned" ? null : obj.binding.priceCents;
+      if (price == null) continue;
+      roomTotal += price;
+      newSpend += price;
+    }
+    return { newSpend, roomTotal };
+  }, [layout]);
+
+  const selected = useMemo(
+    () => layout?.objects.find((o) => o.id === selectedId) ?? null,
+    [layout, selectedId]
+  );
+
+  const handleSnapshot = useCallback(() => {
+    const renderer = glRef.current;
+    if (!renderer) return;
+    setSnapshotting(true);
+    // The Canvas is created with preserveDrawingBuffer, without which this
+    // hands back a blank PNG and reports no error at all.
+    renderer.domElement.toBlob((blob) => {
+      setSnapshotting(false);
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `room-${sessionId}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }, "image/png");
+  }, [sessionId]);
 
   const initialCameraPosition = useMemo(() => {
     if (!layout) return [8, 8, 8] as const;
@@ -513,16 +728,31 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           {layout.room.width.toFixed(1)}m × {layout.room.length.toFixed(1)}m × {layout.room.height.toFixed(1)}m
         </div>
         <div className="text-gray-500">
-          {layout.objects.length} objects — drag to rearrange
+          {layout.objects.length} objects — tap to select, drag to move
         </div>
+        {totals.newSpend > 0 && (
+          <div className="mt-1 border-t border-black/10 pt-1 font-medium text-gray-700">
+            New spend: {formatPrice(totals.newSpend)}
+          </div>
+        )}
         {saving && <div className="text-gray-400">Saving…</div>}
       </div>
       <Canvas
         key={canvasKey}
         shadows
         camera={{ position: initialCameraPosition as unknown as [number, number, number], fov: 55 }}
-        gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1 }}
+        gl={{
+          antialias: true,
+          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMappingExposure: 1.1,
+          // Required for snapshots. WebGL is free to discard the drawing
+          // buffer after compositing, and then toBlob/toDataURL return a
+          // blank image *with no error* — the failure mode is a working
+          // button that silently produces nothing.
+          preserveDrawingBuffer: true,
+        }}
         onCreated={({ gl }) => {
+          glRef.current = gl;
           const canvas = gl.domElement;
           canvas.addEventListener("webglcontextlost", (e) => {
             e.preventDefault();
@@ -533,8 +763,77 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           });
         }}
       >
-        <Scene layout={layout} cameras={cameras} onPositionsSettled={handlePositionsSettled} />
+        <Scene
+          layout={layout}
+          objects={layout.objects}
+          cameras={cameras}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onObjectsChange={handleObjectsChange}
+          onPositionsSettled={handlePositionsSettled}
+        />
       </Canvas>
+
+      {/* Bottom action bar. Rotate and delete act on the selection, so they
+          stay disabled until there is one rather than disappearing — a
+          control that vanishes is harder to find the second time. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center px-4">
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-full bg-white/95 p-1.5 shadow-lg backdrop-blur dark:bg-neutral-900/95">
+          <button
+            onClick={() => setCatalogOpen((v) => !v)}
+            className="rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            {selected ? "Swap…" : "Add furniture"}
+          </button>
+          <span className="mx-1 h-6 w-px bg-black/10 dark:bg-white/10" />
+          <button
+            onClick={() => rotateSelected(-Math.PI / 8)}
+            disabled={!selected}
+            title="Rotate left 22.5°"
+            className="rounded-full px-3 py-2 text-sm disabled:opacity-30 enabled:hover:bg-black/5 dark:enabled:hover:bg-white/10"
+          >
+            ⟲
+          </button>
+          <button
+            onClick={() => rotateSelected(Math.PI / 8)}
+            disabled={!selected}
+            title="Rotate right 22.5°"
+            className="rounded-full px-3 py-2 text-sm disabled:opacity-30 enabled:hover:bg-black/5 dark:enabled:hover:bg-white/10"
+          >
+            ⟳
+          </button>
+          <button
+            onClick={deleteSelected}
+            disabled={!selected}
+            title="Remove from room"
+            className="rounded-full px-3 py-2 text-sm text-red-600 disabled:opacity-30 enabled:hover:bg-red-50 dark:enabled:hover:bg-red-950/40"
+          >
+            Delete
+          </button>
+          <span className="mx-1 h-6 w-px bg-black/10 dark:bg-white/10" />
+          <button
+            onClick={handleSnapshot}
+            disabled={snapshotting}
+            className="rounded-full px-3 py-2 text-sm hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"
+          >
+            {snapshotting ? "Saving…" : "Snapshot"}
+          </button>
+          {/* The social workstream's entire integration ask: one link. */}
+          <a
+            href={`/share?session=${sessionId}`}
+            className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+          >
+            Share
+          </a>
+        </div>
+      </div>
+
+      <CatalogPanel
+        open={catalogOpen}
+        onClose={() => setCatalogOpen(false)}
+        swapTargetLabel={selected ? selected.category : null}
+        onPick={handlePick}
+      />
     </div>
   );
 }
