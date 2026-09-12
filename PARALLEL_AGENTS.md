@@ -19,6 +19,14 @@ Supabase (Storage + Postgres), Gemini API (`gemini-3.6-flash`). Deployed
 to Vercel — check the Vercel dashboard for the current URL, it's not
 recorded here.
 
+**There's a 4th workstream too, Mac-only:** a real LiDAR scanning path
+using the original archived RoomPlan iOS app (`archive/swift-roomplan`
+branch) instead of Gemini's photo-based guessing — significantly more
+accurate, but needs a physical Mac + a LiDAR device to build/run. If
+you're on a Mac, `git checkout archive/swift-roomplan` and read
+`IOS_LIDAR_AGENT.md` **on that branch** (it doesn't exist on `main`) for
+the full standalone brief.
+
 ## Before you start
 
 1. Read `PLAN.md` in full.
