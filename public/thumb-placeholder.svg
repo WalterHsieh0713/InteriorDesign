@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400" role="img" aria-label="Floor plan pending">
-  <rect width="400" height="400" fill="#f4f4f2"/>
-  <rect x="40" y="40" width="320" height="320" fill="none" stroke="#d8d8d4" stroke-width="3"/>
-  <rect x="70" y="80" width="110" height="60" fill="#e6e6e2"/>
-  <rect x="230" y="90" width="90" height="90" fill="#e6e6e2"/>
-  <rect x="80" y="230" width="140" height="80" fill="#e6e6e2"/>
-  <rect x="260" y="250" width="60" height="60" fill="#e6e6e2"/>
-  <text x="200" y="380" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="#a0a09a">floor plan pending</text>
-</svg>

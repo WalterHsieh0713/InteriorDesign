@@ -29,7 +29,9 @@ if (!url || !key) {
 }
 
 const RESET = process.argv.includes("--reset");
-const PLACEHOLDER_THUMB = "/thumb-placeholder.svg";
+
+/** Live floor plan generated from the layout. See src/app/api/thumbnail. */
+const thumbnailFor = (session) => `/api/thumbnail/${encodeURIComponent(session)}`;
 
 const headers = {
   apikey: key,
@@ -37,28 +39,55 @@ const headers = {
   "Content-Type": "application/json",
 };
 
-async function rest(path, init = {}) {
-  const res = await fetch(`${url}/rest/v1/${path}`, {
-    ...init,
-    headers: { ...headers, ...(init.headers ?? {}) },
-  });
-  if (!res.ok) {
-    throw new Error(`${init.method ?? "GET"} ${path} -> ${res.status} ${await res.text()}`);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Supabase's gateway intermittently returns 502/503/504 under load. Those
+ * are worth a short backoff; a 4xx means the request itself is wrong and
+ * retrying it just fails slower.
+ */
+async function rest(path, init = {}, attempts = 3) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const res = await fetch(`${url}/rest/v1/${path}`, {
+      ...init,
+      headers: { ...headers, ...(init.headers ?? {}) },
+    });
+
+    if (res.ok) return res;
+
+    const retryable = res.status === 502 || res.status === 503 || res.status === 504;
+    if (!retryable || attempt === attempts - 1) {
+      throw new Error(`${init.method ?? "GET"} ${path} -> ${res.status} ${await res.text()}`);
+    }
+
+    console.warn(`  ${res.status} on ${init.method ?? "GET"} ${path} — retrying...`);
+    await sleep(1000 * 2 ** attempt);
   }
-  return res;
+  throw new Error("unreachable");
 }
 
 // --- deriving plausible metadata from a real layout -------------------------
 
-/** Guess a room type from what the scan actually found in the room. */
-function inferRoomType(categories) {
+/**
+ * Guess a room type from what the scan actually found.
+ *
+ * Must return a value from ROOM_TYPES in src/lib/postMetadata.ts, or the
+ * post is invisible to the room-type filter, which only offers those.
+ *
+ * LiDAR scans mostly yield shelf/chair/table/door/window and give nothing
+ * to infer from, so the fallback assigns a plausible type deterministically
+ * rather than dumping everything into one bucket. That is fabrication, and
+ * acceptable only because this is seed data whose job is to exercise the
+ * filters. Real posts get the type from the author in the composer.
+ */
+function inferRoomType(categories, seed) {
   const has = (c) => categories.includes(c);
   if (has("bed") && has("desk")) return "dorm";
   if (has("bed")) return "bedroom";
   if (has("sofa") && has("tv")) return "living room";
   if (has("sofa")) return "lounge";
   if (has("desk")) return "office";
-  return "room";
+  return pick(["studio", "office", "bedroom", "living room", "other"], seed);
 }
 
 /** Deterministic pick, so re-seeding produces the same feed. */
@@ -167,9 +196,9 @@ rooms.forEach((row, i) => {
     session_id: row.session_id,
     author_handle: pick(HANDLES, seed),
     caption: pick(CAPTIONS, seed),
-    thumbnail_url: PLACEHOLDER_THUMB,
+    thumbnail_url: thumbnailFor(row.session_id),
     created_at: createdAtFor(i, rooms.length),
-    room_type: inferRoomType(categories),
+    room_type: inferRoomType(categories, seed),
     width_m: Number(room.width.toFixed(2)),
     length_m: Number(room.length.toFixed(2)),
     area_m2: Number((room.width * room.length).toFixed(2)),
@@ -191,7 +220,35 @@ const inserted = await (
   })
 ).json();
 
-console.log(`\nSeeded ${inserted.length} post(s) from ${rooms.length} real layout(s).\n`);
+/**
+ * Back every seeded like_count with real post_likes rows.
+ *
+ * The like endpoint recounts from post_likes rather than incrementing, so a
+ * counter that isn't backed by rows collapses the instant someone clicks:
+ * a post showing 89 drops to 1 on the first real like. Seeding the rows
+ * keeps the counter honest and the ranking tabs stable during a demo.
+ */
+const likeRows = [];
+for (const post of inserted) {
+  for (let i = 0; i < post.like_count; i++) {
+    likeRows.push({ post_id: post.id, device_id: `seed-device-${i}` });
+  }
+}
+
+if (likeRows.length > 0) {
+  // Chunked: a few thousand rows in one request is a large body and a slow
+  // statement for no benefit.
+  for (let i = 0; i < likeRows.length; i += 500) {
+    await rest("post_likes", {
+      method: "POST",
+      headers: { Prefer: "resolution=ignore-duplicates" },
+      body: JSON.stringify(likeRows.slice(i, i + 500)),
+    });
+  }
+}
+
+console.log(`\nSeeded ${inserted.length} post(s) from ${rooms.length} real layout(s).`);
+console.log(`  ${likeRows.length} like(s) inserted so the counters are backed by real rows.\n`);
 
 const byType = {};
 for (const p of posts) byType[p.room_type] = (byType[p.room_type] ?? 0) + 1;
@@ -204,4 +261,4 @@ console.log(
   "  time windows:",
   `today ${within(24)}, week ${within(24 * 7)}, month ${within(24 * 30)}, all ${posts.length}`
 );
-console.log(`\n  thumbnails point at ${PLACEHOLDER_THUMB} — Phase 1 backfills real floor plans.\n`);
+console.log("\n  thumbnails render a live floor plan from each layout.\n");

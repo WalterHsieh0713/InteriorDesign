@@ -24,3 +24,59 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* --- Social layer ("plans") ------------------------------------------------
+   Scoped to .plans so the feed's drafting palette can't leak into the
+   scanner and room views, which have their own look. The subject here is
+   architectural floor plans, so the vocabulary is drafting paper, blueline
+   accents, and a red approval stamp. */
+.plans {
+  --paper: #eef0ea;
+  --sheet: #ffffff;
+  --ink: #12203a;
+  --pencil: #7b8494;
+  --blueline: #3d5a99;
+  --stamp: #c8402f;
+  --rule: #d7dad2;
+
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Title-block voice: dimensions, areas, counts, labels. */
+.plans .tb {
+  font-family: var(--font-plex-mono), ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* A sheet of paper on the drafting table. */
+.plans .sheet {
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+@media (hover: hover) {
+  .plans a.sheet:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 22px -12px rgb(18 32 58 / 0.45);
+  }
+}
+
+.plans .tabstrip {
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+.plans .tabstrip::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plans .sheet,
+  .plans a.sheet:hover {
+    transition: none;
+    transform: none;
+  }
+}
