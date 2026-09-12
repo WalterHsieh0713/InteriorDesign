@@ -4,12 +4,18 @@ export const OBJECT_CATEGORIES = [
   "bed",
   "desk",
   "chair",
+  "stool",
   "sofa",
   "table",
   "shelf",
   "dresser",
+  "nightstand",
+  "ottoman",
   "tv",
+  "monitor",
   "lamp",
+  "mirror",
+  "plant",
   "rug",
   "door",
   "window",
@@ -28,6 +34,23 @@ export const SURFACE_MATERIALS = [
 const vec3 = z.tuple([z.number(), z.number(), z.number()]);
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 
+// One entry per photo the LiDAR app captured *with a known camera pose* —
+// used to project real pixels onto the room's surfaces instead of a flat
+// sampled color. Web-only (Gemini photo) sessions never have this, since a
+// phone snapshot from the browser carries no ARKit pose; that path keeps
+// rendering flat colors exactly as before. `transform` is the camera's full
+// 4x4 world matrix (16 numbers, column-major, already in the same
+// room-aligned space as object positions) and `fovY` is its vertical field
+// of view in radians — together with `width`/`height` that's everything
+// needed to reproduce what that camera saw.
+const cameraFrame = z.object({
+  url: z.string(),
+  transform: z.array(z.number()).length(16),
+  fovY: z.number().positive(),
+  width: z.number().positive(),
+  height: z.number().positive(),
+});
+
 // Colors and materials are optional throughout: the LiDAR path has no camera
 // imagery to sample them from, and layouts captured before this existed must
 // keep validating. Anything missing falls back to the category palette.
@@ -40,6 +63,10 @@ export const RoomLayoutSchema = z.object({
     floorColor: hexColor.optional(),
     ceilingColor: hexColor.optional(),
     floorMaterial: z.enum(SURFACE_MATERIALS).optional(),
+    // Tint for the scene's lights — a warm incandescent room and a cool
+    // daylight one should not be lit identically. Defaults to neutral white
+    // when absent.
+    lightColor: hexColor.optional(),
   }),
   objects: z.array(
     z.object({
@@ -52,6 +79,9 @@ export const RoomLayoutSchema = z.object({
       color: hexColor.optional(),
     })
   ),
+  cameraFrames: z.array(cameraFrame).optional(),
 });
+
+export type CameraFrame = z.infer<typeof cameraFrame>;
 
 export type RoomLayout = z.infer<typeof RoomLayoutSchema>;
