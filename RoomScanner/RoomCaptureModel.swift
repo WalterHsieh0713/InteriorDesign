@@ -31,6 +31,7 @@ final class RoomCaptureModel: NSObject, ObservableObject, RoomCaptureViewDelegat
     private let ciContext = CIContext()
     private let encodeQueue = DispatchQueue(label: "room-scanner.frame-encode", qos: .utility)
 
+    private static let maxFrameDimension: CGFloat = 768
     private let sampleInterval: TimeInterval = 2.5
     /// ~100s of scanning. Past this we stop rather than grow without bound;
     /// most room scans finish well inside it.
@@ -89,9 +90,18 @@ final class RoomCaptureModel: NSObject, ObservableObject, RoomCaptureViewDelegat
         // long enough to visibly hitch the AR session otherwise.
         encodeQueue.async { [weak self] in
             guard let self else { return }
-            let image = CIImage(cvPixelBuffer: frame.capturedImage)
+            let full = CIImage(cvPixelBuffer: frame.capturedImage)
+
+            // Downscale hard before encoding. These are only ever used to
+            // read colours off surfaces, and a full 1920px camera frame
+            // costs ~4x the upload and noticeably more Gemini time than a
+            // 768px one for no benefit at all at that job.
+            let longestSide = max(full.extent.width, full.extent.height)
+            let scale = longestSide > 0 ? min(1, Self.maxFrameDimension / longestSide) : 1
+            let image = scale < 1 ? full.transformed(by: CGAffineTransform(scaleX: scale, y: scale)) : full
+
             guard let cgImage = self.ciContext.createCGImage(image, from: image.extent),
-                  let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.5)
+                  let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.6)
             else { return }
 
             DispatchQueue.main.async {

@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var shareURL: URL?
     @State private var errorMessage: String?
     @State private var isUploading = false
+    @State private var uploadStage = "Uploading..."
     @State private var diagnostics: String?
 
     /// RoomCaptureSession.isSupported is false on any device without a LiDAR
@@ -39,7 +40,7 @@ struct ContentView: View {
             }
 
             if isUploading {
-                ProgressView("Uploading to room…")
+                ProgressView(uploadStage)
             }
 
             if let errorMessage {
@@ -84,6 +85,7 @@ struct ContentView: View {
     private func export(_ room: CapturedRoom, frames: [Data]) {
         errorMessage = nil
         isUploading = true
+        uploadStage = "Uploading room..."
 
         Task {
             do {
@@ -98,10 +100,20 @@ struct ContentView: View {
                 // it. Just note it in the diagnostics.
                 var colorNote = "colors: skipped (no frames captured)"
                 if !frames.isEmpty {
+                    await MainActor.run { uploadStage = "Sending \(frames.count) colour photos..." }
                     do {
-                        for frame in frames {
-                            try await LayoutUploader.uploadPhoto(frame, session: session)
+                        // In parallel — these are independent uploads, and
+                        // run sequentially they cost six round trips back
+                        // to back before colorizing can even start.
+                        try await withThrowingTaskGroup(of: Void.self) { group in
+                            for frame in frames {
+                                group.addTask {
+                                    try await LayoutUploader.uploadPhoto(frame, session: session)
+                                }
+                            }
+                            try await group.waitForAll()
                         }
+                        await MainActor.run { uploadStage = "Reading room colours..." }
                         try await LayoutUploader.colorize(session: session)
                         colorNote = "colors: applied from \(frames.count) frames"
                     } catch {
