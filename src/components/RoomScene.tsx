@@ -297,7 +297,15 @@ function Scene({
   const { camera, raycaster, gl } = useThree();
   const lightColor = layout.room.lightColor ?? "#ffffff";
 
-  useEffect(() => setObjects(layout.objects), [layout]);
+  // Re-sync the draggable copy when a new layout arrives. Adjusting state
+  // during render rather than in an effect: React discards this render and
+  // re-runs immediately without committing, so the scene never paints one
+  // frame of the previous room's furniture.
+  const [syncedFrom, setSyncedFrom] = useState(layout);
+  if (syncedFrom !== layout) {
+    setSyncedFrom(layout);
+    setObjects(layout.objects);
+  }
 
   const handleDragStart = useCallback((id: string, y: number) => {
     setDraggingId(id);

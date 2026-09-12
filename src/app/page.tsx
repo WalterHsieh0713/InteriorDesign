@@ -1,26 +1,46 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 
 type Photo = { name: string; url: string; createdAt: string | null };
 
+/**
+ * The capture session id, as an external store.
+ *
+ * One id per page load, created lazily the first time the client asks for
+ * it. The snapshot has to be cached: useSyncExternalStore compares by
+ * identity, so minting a fresh UUID per call would re-render forever.
+ */
+let cachedSessionId: string | null = null;
+
+function subscribeSession(): () => void {
+  return () => {};
+}
+
+function getSessionId(): string {
+  if (!cachedSessionId) cachedSessionId = crypto.randomUUID();
+  return cachedSessionId;
+}
+
+function getServerSessionId(): string | null {
+  return null;
+}
+
 export default function Home() {
   const router = useRouter();
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [captureUrl, setCaptureUrl] = useState<string | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [inferring, setInferring] = useState(false);
   const [inferError, setInferError] = useState<string | null>(null);
 
-  // Generated client-side only, after mount — a UUID picked during SSR would
-  // never match the one the client re-generates on hydration.
-  useEffect(() => {
-    const id = crypto.randomUUID();
-    setSessionId(id);
-    setCaptureUrl(`${window.location.origin}/capture?session=${id}`);
-  }, []);
+  // Generated client-side only — a UUID picked during SSR would never match
+  // the one the client re-generates on hydration. useSyncExternalStore is
+  // built for exactly this: it renders the server snapshot (null) through
+  // hydration, then swaps in the client one, with no setState in an effect
+  // and no mismatch warning.
+  const sessionId = useSyncExternalStore(subscribeSession, getSessionId, getServerSessionId);
+  const captureUrl = sessionId ? `${window.location.origin}/capture?session=${sessionId}` : null;
 
   // Deliberately dumb polling for now — Supabase Realtime replaces this later.
   useEffect(() => {
