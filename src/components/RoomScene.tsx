@@ -7,7 +7,16 @@ import * as THREE from "three";
 import type { ItemBinding, RoomLayout } from "@/lib/roomLayoutSchema";
 import { CATALOG_BY_ID, formatPrice } from "@/lib/catalog";
 import { meshForItem, toBinding, toDimensions, type CatalogItem } from "@/lib/catalogItem";
-import { clampToRoom, hangFromCeiling, initialPlacement, mountOf, snapFloorNearWall, snapToWall, supportHeightAt } from "@/lib/placement";
+import {
+  clampToRoom,
+  hangFromCeiling,
+  initialPlacement,
+  mountOf,
+  snapFloorNearWall,
+  snapToWall,
+  supportHeightAt,
+  wallOutlinePolygon,
+} from "@/lib/placement";
 import { availablePresets, rollFor, runLength, segmentsFor, type LedPreset, type LedPresetId } from "@/lib/ledPresets";
 import { projectionFor } from "@/lib/projection";
 import { buildShoppingList, type LineItem } from "@/lib/shoppingList";
@@ -116,59 +125,13 @@ class EnvironmentBoundary extends Component<{ children: ReactNode }, { failed: b
   }
 }
 
-/// Walks the wall segments into a single closed outline so the floor can be
-/// cut to the room's true shape instead of overhanging as a rectangle.
-///
-/// Greedy nearest-endpoint chaining rather than anything cleverer: scanned
-/// walls are a loop in practice but rarely a *tidy* one — they overshoot at
-/// corners, and RoomPlan gives no ordering or adjacency. Walking to whichever
-/// unused endpoint is nearest reconstructs a sane perimeter for rectangles and
-/// L-shapes alike, and degrades to "slightly wrong polygon" rather than
-/// throwing when a scan is messy.
+/// Thin wrapper around placement.ts's wallOutlinePolygon — that's the one
+/// true implementation (framework-agnostic, so it can also be used for
+/// drag clamping/snapping), this just converts to the Vector2s the floor's
+/// ShapeGeometry wants.
 function wallOutline(walls: NonNullable<RoomLayout["walls"]>): THREE.Vector2[] | null {
-  if (walls.length < 3) return null;
-
-  // Each wall's footprint is the line its width traces along the floor.
-  const segments = walls.map((w) => {
-    const half = w.dimensions[0] / 2;
-    const dir = rotateY(new THREE.Vector3(1, 0, 0), w.rotationY);
-    const cx = w.position[0];
-    const cz = w.position[2];
-    return {
-      a: new THREE.Vector2(cx - dir.x * half, cz - dir.z * half),
-      b: new THREE.Vector2(cx + dir.x * half, cz + dir.z * half),
-    };
-  });
-
-  const used = new Array(segments.length).fill(false);
-  used[0] = true;
-  const points = [segments[0].a, segments[0].b];
-
-  for (let step = 1; step < segments.length; step++) {
-    const tail = points[points.length - 1];
-    let bestIndex = -1;
-    let bestDistance = Infinity;
-    let bestFar: THREE.Vector2 | null = null;
-
-    for (let i = 0; i < segments.length; i++) {
-      if (used[i]) continue;
-      const { a, b } = segments[i];
-      const da = tail.distanceTo(a);
-      const db = tail.distanceTo(b);
-      const near = Math.min(da, db);
-      if (near < bestDistance) {
-        bestDistance = near;
-        bestIndex = i;
-        bestFar = da <= db ? b : a;
-      }
-    }
-
-    if (bestIndex < 0 || !bestFar) break;
-    used[bestIndex] = true;
-    points.push(bestFar);
-  }
-
-  return points.length >= 3 ? points : null;
+  const polygon = wallOutlinePolygon(walls);
+  return polygon ? polygon.map(([x, z]) => new THREE.Vector2(x, z)) : null;
 }
 
 /**
@@ -217,22 +180,51 @@ function WallPanel({
  * around a corner: the moment the pointer crosses onto the next wall, that
  * wall is simply the nearest hit and the piece follows it.
  */
-function nearestWallPoint(ray: THREE.Ray, room: RoomLayout["room"]): THREE.Vector3 | null {
-  const hw = room.width / 2;
-  const hl = room.length / 2;
-  const planes: { plane: THREE.Plane; within: (p: THREE.Vector3) => boolean }[] = [
-    { plane: new THREE.Plane(new THREE.Vector3(0, 0, 1), hl), within: (p) => Math.abs(p.x) <= hw + 0.2 },
-    { plane: new THREE.Plane(new THREE.Vector3(0, 0, -1), hl), within: (p) => Math.abs(p.x) <= hw + 0.2 },
-    { plane: new THREE.Plane(new THREE.Vector3(1, 0, 0), hw), within: (p) => Math.abs(p.z) <= hl + 0.2 },
-    { plane: new THREE.Plane(new THREE.Vector3(-1, 0, 0), hw), within: (p) => Math.abs(p.z) <= hl + 0.2 },
-  ];
+function nearestWallPoint(
+  ray: THREE.Ray,
+  room: RoomLayout["room"],
+  walls?: RoomLayout["walls"]
+): THREE.Vector3 | null {
+  const planes: { plane: THREE.Plane; within: (p: THREE.Vector3) => boolean; maxY: number }[] = [];
+
+  if (walls && walls.length >= 3) {
+    // Real measured walls: one finite plane per wall segment, bounded by its
+    // own length and height rather than the room's overall box.
+    for (const w of walls) {
+      const c = Math.cos(w.rotationY);
+      const s = Math.sin(w.rotationY);
+      const normal = new THREE.Vector3(s, 0, c);
+      const towardOrigin = new THREE.Vector3(-w.position[0], 0, -w.position[2]);
+      if (normal.dot(towardOrigin) < 0) normal.negate();
+      const center = new THREE.Vector3(w.position[0], w.position[1], w.position[2]);
+      const dir = new THREE.Vector3(c, 0, -s); // along the wall's own length
+      const half = w.dimensions[0] / 2;
+      planes.push({
+        plane: new THREE.Plane().setFromNormalAndCoplanarPoint(normal, center),
+        within: (p) => {
+          const rel = p.clone().sub(center);
+          return Math.abs(rel.dot(dir)) <= half + 0.2;
+        },
+        maxY: w.dimensions[1],
+      });
+    }
+  } else {
+    const hw = room.width / 2;
+    const hl = room.length / 2;
+    planes.push(
+      { plane: new THREE.Plane(new THREE.Vector3(0, 0, 1), hl), within: (p) => Math.abs(p.x) <= hw + 0.2, maxY: room.height },
+      { plane: new THREE.Plane(new THREE.Vector3(0, 0, -1), hl), within: (p) => Math.abs(p.x) <= hw + 0.2, maxY: room.height },
+      { plane: new THREE.Plane(new THREE.Vector3(1, 0, 0), hw), within: (p) => Math.abs(p.z) <= hl + 0.2, maxY: room.height },
+      { plane: new THREE.Plane(new THREE.Vector3(-1, 0, 0), hw), within: (p) => Math.abs(p.z) <= hl + 0.2, maxY: room.height }
+    );
+  }
 
   let best: THREE.Vector3 | null = null;
   let bestDist = Infinity;
   const hit = new THREE.Vector3();
-  for (const { plane, within } of planes) {
+  for (const { plane, within, maxY } of planes) {
     if (!ray.intersectPlane(plane, hit)) continue;
-    if (hit.y < -0.3 || hit.y > room.height + 0.3) continue;
+    if (hit.y < -0.3 || hit.y > maxY + 0.3) continue;
     if (!within(hit)) continue;
     const d = ray.origin.distanceTo(hit);
     if (d < bestDist) {
@@ -898,17 +890,12 @@ function Scene({
       const obj = latest.current.find((o) => o.id === id);
       const mount = obj ? mountOf(obj) : "floor";
       if (obj && mount === "wall") {
-        const snap = snapToWall(obj, obj.position[0], obj.position[1], obj.position[2], layout.room);
-        const n =
-          snap.side === "north"
-            ? new THREE.Vector3(0, 0, 1)
-            : snap.side === "south"
-              ? new THREE.Vector3(0, 0, -1)
-              : snap.side === "west"
-                ? new THREE.Vector3(1, 0, 0)
-                : new THREE.Vector3(-1, 0, 0);
+        const snap = snapToWall(obj, obj.position[0], obj.position[1], obj.position[2], layout.room, layout.walls);
+        // Read straight off the snap result rather than re-deriving it from
+        // `side` — a real measured wall can sit at any angle, and `side` is
+        // only ever one of the four cardinal labels.
         dragPlane.current.setFromNormalAndCoplanarPoint(
-          n,
+          new THREE.Vector3(snap.normal[0], 0, snap.normal[1]),
           new THREE.Vector3(snap.position[0], snap.position[1], snap.position[2])
         );
       } else if (obj && mount === "ceiling") {
@@ -917,7 +904,7 @@ function Scene({
         dragPlane.current.set(new THREE.Vector3(0, 1, 0), -y);
       }
     },
-    [layout.room]
+    [layout.room, layout.walls]
   );
 
   useEffect(() => {
@@ -952,10 +939,11 @@ function Scene({
         // piece started on. Locking is what made a poster stick at a corner:
         // once the pointer passed 90 degrees, it was still being projected
         // onto a wall that was no longer in front of it.
-        const onWall = nearestWallPoint(raycaster.ray, layout.room);
+        const onWall = nearestWallPoint(raycaster.ray, layout.room, layout.walls);
         if (!onWall) return;
-        next = snapToWall(dragged, onWall.x, onWall.y, onWall.z, layout.room).position;
-        const facing = snapToWall(dragged, onWall.x, onWall.y, onWall.z, layout.room).rotationY;
+        const wallSnap = snapToWall(dragged, onWall.x, onWall.y, onWall.z, layout.room, layout.walls);
+        next = wallSnap.position;
+        const facing = wallSnap.rotationY;
         onObjectsChange(
           latest.current.map((o) =>
             o.id === draggingId ? { ...o, position: next, rotationY: facing } : o
@@ -968,15 +956,17 @@ function Scene({
       } else if (mount === "tabletop") {
         // Rest on whatever is underneath: a desk lamp rises onto a tall
         // nightstand and drops onto a lower desk without anyone typing a height.
-        const [cx, cz] = clampToRoom(dragged, x, z, layout.room);
+        const [cx, cz] = clampToRoom(dragged, x, z, layout.room, layout.walls);
         const support = supportHeightAt(dragged, cx, cz, latest.current);
         next = [cx, support + dragged.dimensions[1] / 2, cz];
       } else {
         // Furniture in a real dorm lives against a wall, and getting something
         // exactly flush by hand in a 3D view is fiddly. Snapping is a toggle
         // because sometimes you do want a rug floating in the middle.
-        const snapped = snapEnabled ? snapFloorNearWall(dragged, x, z, layout.room) : null;
-        const [cx, cz] = clampToRoom(dragged, x, z, layout.room);
+        const snapped = snapEnabled
+          ? snapFloorNearWall(dragged, x, z, layout.room, undefined, layout.walls)
+          : null;
+        const [cx, cz] = clampToRoom(dragged, x, z, layout.room, layout.walls);
         next = snapped ? snapped.position : [cx, dragPlaneY.current, cz];
         if (snapped) {
           onObjectsChange(
@@ -1005,7 +995,7 @@ function Scene({
       canvas.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
     };
-  }, [draggingId, camera, raycaster, gl, layout.room, onPositionsSettled, onObjectsChange, onSelect, snapEnabled]);
+  }, [draggingId, camera, raycaster, gl, layout.room, layout.walls, onPositionsSettled, onObjectsChange, onSelect, snapEnabled]);
 
   return (
     <>
@@ -1357,14 +1347,15 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           };
           // Ask the placement rules where it belongs: clear floor for furniture,
           // the nearest wall for a poster, a real surface for a desk lamp.
-          placed.position = initialPlacement(placed, current.room, objects);
+          placed.position = initialPlacement(placed, current.room, objects, current.walls);
           if (item.mount === "wall") {
             placed.rotationY = snapToWall(
               placed,
               placed.position[0],
               placed.position[1],
               placed.position[2],
-              current.room
+              current.room,
+              current.walls
             ).rotationY;
           }
           return [...objects, placed];
@@ -1398,13 +1389,14 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           },
           preset: `poster:${art}:${size.id}`,
         };
-        placed.position = initialPlacement(placed, current.room, objects);
+        placed.position = initialPlacement(placed, current.room, objects, current.walls);
         placed.rotationY = snapToWall(
           placed,
           placed.position[0],
           placed.position[1],
           placed.position[2],
-          current.room
+          current.room,
+          current.walls
         ).rotationY;
         return [...objects, placed];
       });
