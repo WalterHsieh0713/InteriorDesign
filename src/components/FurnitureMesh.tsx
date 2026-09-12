@@ -136,9 +136,16 @@ function faceGeometryFor(
     case "shelf":
       return { offset: new THREE.Vector3(0, 0, -d / 2), normal: new THREE.Vector3(0, 0, -1), faceW: w, faceH: h };
     // Screen/front-facing categories: the flat panel already rendered at +Z.
+    // The appliances qualify because their door is drawn as its own thin
+    // panel — projecting onto the full body box instead would smear the
+    // front photo across the sides and back too.
     case "tv":
     case "monitor":
     case "door":
+    case "refrigerator":
+    case "dishwasher":
+    case "washerDryer":
+    case "oven":
       return { offset: new THREE.Vector3(0, 0, d / 2), normal: new THREE.Vector3(0, 0, 1), faceW: w, faceH: h };
     // Horizontal top surface.
     case "table":
@@ -303,6 +310,141 @@ function FurnitureGeometry({ category, dimensions, color, opacity }: Props) {
           />
           <Panel size={[standW, standH, standW]} offset={[0, -h / 2 + standH / 2, 0]} color={dark} opacity={opacity} />
           <Panel size={[w * 0.4, h * 0.04, d * 0.4]} offset={[0, -h / 2 + h * 0.02, 0]} color={dark} opacity={opacity} />
+        </group>
+      );
+    }
+
+    // Big boxy appliances: a slab body with a door seam and a handle. The
+    // seam is what stops these reading as featureless grey blocks.
+    case "refrigerator":
+    case "dishwasher":
+    case "washerDryer":
+    case "oven": {
+      const handleInset = Math.max(w * 0.08, 0.03);
+      return (
+        <group>
+          <Panel size={[w, h, d]} offset={[0, 0, 0]} color={color} opacity={opacity} roughness={0.35} metalness={0.45} />
+          <Panel
+            size={[w * 0.9, h * 0.88, d * 0.04]}
+            offset={[0, 0, d / 2 + 0.004]}
+            color={dark}
+            opacity={opacity}
+            roughness={0.3}
+            metalness={0.5}
+            usePhoto
+          />
+          <Panel
+            size={[Math.max(w * 0.05, 0.02), h * 0.5, Math.max(d * 0.05, 0.02)]}
+            offset={[w / 2 - handleInset, h * 0.1, d / 2 + 0.03]}
+            color="#8d9296"
+            opacity={opacity}
+            roughness={0.25}
+            metalness={0.8}
+          />
+        </group>
+      );
+    }
+
+    case "stove": {
+      const topThick = Math.max(h * 0.05, 0.02);
+      return (
+        <group>
+          <Panel size={[w, h - topThick, d]} offset={[0, -topThick / 2, 0]} color={color} opacity={opacity} roughness={0.4} metalness={0.4} />
+          <Panel size={[w, topThick, d]} offset={[0, h / 2 - topThick / 2, 0]} color="#26292c" opacity={opacity} roughness={0.2} metalness={0.5} />
+          {/* Four burners, so a cooktop reads as a cooktop from above. */}
+          {[
+            [-0.24, -0.22],
+            [0.24, -0.22],
+            [-0.24, 0.22],
+            [0.24, 0.22],
+          ].map(([fx, fz], i) => (
+            <mesh key={i} position={[w * fx, h / 2 + 0.002, d * fz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+              <circleGeometry args={[Math.min(w, d) * 0.12, 16]} />
+              <meshStandardMaterial color="#15171a" roughness={0.5} />
+            </mesh>
+          ))}
+        </group>
+      );
+    }
+
+    case "toilet": {
+      const tankH = h * 0.45;
+      return (
+        <group>
+          <mesh position={[0, -h / 2 + (h - tankH) / 2, d * 0.08]} castShadow receiveShadow>
+            <cylinderGeometry args={[Math.min(w, d) * 0.36, Math.min(w, d) * 0.3, h - tankH, 16]} />
+            <meshStandardMaterial color={color} roughness={0.18} opacity={opacity} transparent={opacity < 1} />
+          </mesh>
+          <Panel size={[w * 0.75, tankH, d * 0.28]} offset={[0, h / 2 - tankH / 2, -d / 2 + d * 0.16]} color={color} opacity={opacity} roughness={0.18} />
+        </group>
+      );
+    }
+
+    case "sink": {
+      const rim = Math.max(h * 0.15, 0.03);
+      return (
+        <group>
+          <Panel size={[w, rim, d]} offset={[0, h / 2 - rim / 2, 0]} color={color} opacity={opacity} roughness={0.15} metalness={0.3} />
+          <Panel size={[w * 0.75, h - rim, d * 0.75]} offset={[0, -rim / 2, 0]} color={dark} opacity={opacity} roughness={0.2} metalness={0.4} />
+          <mesh position={[0, h / 2 + h * 0.18, -d * 0.32]} castShadow>
+            <cylinderGeometry args={[Math.min(w, d) * 0.045, Math.min(w, d) * 0.05, h * 0.4, 12]} />
+            <meshStandardMaterial color="#b9bfc4" roughness={0.15} metalness={0.85} />
+          </mesh>
+        </group>
+      );
+    }
+
+    case "bathtub": {
+      const wallThick = Math.max(Math.min(w, d) * 0.07, 0.03);
+      return (
+        <group>
+          <Panel size={[w, h, d]} offset={[0, 0, 0]} color={color} opacity={opacity} roughness={0.15} />
+          {/* Recessed basin — without it a tub is just a slab. */}
+          <Panel
+            size={[w - wallThick * 2, h * 0.7, d - wallThick * 2]}
+            offset={[0, h * 0.2, 0]}
+            color={shade(color, -8)}
+            opacity={opacity}
+            roughness={0.2}
+          />
+        </group>
+      );
+    }
+
+    case "fireplace": {
+      return (
+        <group>
+          <Panel size={[w, h, d]} offset={[0, 0, 0]} color={color} opacity={opacity} roughness={0.9} />
+          <Panel
+            size={[w * 0.6, h * 0.55, d * 0.3]}
+            offset={[0, -h * 0.15, d / 2 - d * 0.15]}
+            color="#1a1613"
+            opacity={opacity}
+            roughness={1}
+          />
+        </group>
+      );
+    }
+
+    case "stairs": {
+      // Stepped rather than a ramp — the whole point of drawing stairs is
+      // that they read as stairs at a glance.
+      const steps = Math.max(3, Math.min(12, Math.round(h / 0.18)));
+      return (
+        <group>
+          {Array.from({ length: steps }, (_, i) => {
+            const stepH = h / steps;
+            const stepD = d / steps;
+            return (
+              <Panel
+                key={i}
+                size={[w, stepH, d - stepD * i]}
+                offset={[0, -h / 2 + stepH * (i + 0.5), d / 2 - (d - stepD * i) / 2]}
+                color={i % 2 === 0 ? color : shade(color, -6)}
+                opacity={opacity}
+              />
+            );
+          })}
         </group>
       );
     }

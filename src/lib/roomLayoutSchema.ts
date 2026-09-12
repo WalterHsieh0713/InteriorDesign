@@ -17,10 +17,29 @@ export const OBJECT_CATEGORIES = [
   "mirror",
   "plant",
   "rug",
+  // Appliances and fixtures. RoomPlan detects every one of these natively —
+  // the exporter used to collapse them all into "other", which is why a
+  // scanned kitchen or bathroom came back as anonymous grey boxes.
+  "refrigerator",
+  "oven",
+  "stove",
+  "dishwasher",
+  "washerDryer",
+  "sink",
+  "toilet",
+  "bathtub",
+  "fireplace",
+  "stairs",
   "door",
   "window",
   "other",
 ] as const;
+
+/// Categories that describe the room's structure rather than its contents.
+/// These are measured in place and dragging them is always a mistake — a door
+/// halfway across the floor is nonsense, and moving one silently corrupts the
+/// only record of where the real opening was.
+export const FIXED_CATEGORIES: readonly string[] = ["door", "window", "stairs", "fireplace"];
 
 export const SURFACE_MATERIALS = [
   "carpet",
