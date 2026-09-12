@@ -325,6 +325,45 @@ function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedC
   );
 }
 
+function IconCamera({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M4 8a2 2 0 0 1 2-2h1.5l1-1.5h7l1 1.5H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12.5" r="3.2" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+function IconReset({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path d="M4 4v5h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M4.6 13a7.5 7.5 0 1 0 2.1-7.1L4 9"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// A paper airplane — the universal "send" glyph, the same fold shape most
+// share buttons use.
+function IconSend({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <path d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z" />
+    </svg>
+  );
+}
+
 // Lamps are the one category that's plausibly an actual light source in the
 // room, not just something lit by it — without this every render only ever
 // has the one overhead sun-like light, no matter how many lamps are in shot.
@@ -361,6 +400,7 @@ function DraggableObject({
   // render recognizable as someone's actual room. Category palette is just
   // the fallback for older layouts and the LiDAR path.
   const color = obj.color ?? CATEGORY_COLORS[obj.category] ?? CATEGORY_COLORS.other;
+  const [hovered, setHovered] = useState(false);
 
   return (
     <group
@@ -371,6 +411,11 @@ function DraggableObject({
         (e.target as Element).setPointerCapture?.(e.pointerId);
         onDragStart(obj.id, obj.position[1], e);
       }}
+      onPointerOver={(e: ThreeEvent<PointerEvent>) => {
+        e.stopPropagation();
+        setHovered(true);
+      }}
+      onPointerOut={() => setHovered(false)}
     >
       {obj.category === "mirror" ? (
         <MirrorMesh dimensions={obj.dimensions} selected={isSelected} />
@@ -426,20 +471,22 @@ function DraggableObject({
       {obj.category === "lamp" && (
         <pointLight position={[0, h * 0.3, 0]} color={LAMP_LIGHT_COLOR} intensity={2.5} distance={4} decay={2} />
       )}
-      <Html position={[0, h / 2 + 0.15, 0]} center distanceFactor={8} style={{ pointerEvents: "none" }}>
-        <div
-          style={{
-            background: "rgba(0,0,0,0.75)",
-            color: "white",
-            padding: "2px 6px",
-            borderRadius: 4,
-            fontSize: 11,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {obj.category}
-        </div>
-      </Html>
+      {hovered && (
+        <Html position={[0, h / 2 + 0.15, 0]} center distanceFactor={8} style={{ pointerEvents: "none" }}>
+          <div
+            style={{
+              background: "rgba(0,0,0,0.75)",
+              color: "white",
+              padding: "2px 6px",
+              borderRadius: 4,
+              fontSize: 11,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {obj.category}
+          </div>
+        </Html>
+      )}
     </group>
   );
 }
@@ -1159,25 +1206,28 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="relative w-screen h-screen">
-      <div className="absolute top-3 left-3 z-10 bg-white/90 rounded-lg px-3 py-2 text-xs shadow">
-        <div className="font-medium">
-          {layout.room.width.toFixed(1)}m × {layout.room.length.toFixed(1)}m × {layout.room.height.toFixed(1)}m
+      <div className="absolute top-3 left-3 z-10 min-w-[190px] rounded-xl border border-black/5 bg-white/95 px-4 py-3 shadow-lg backdrop-blur dark:border-white/10 dark:bg-neutral-900/95">
+        <div className="font-mono text-sm font-semibold tracking-tight tabular-nums text-neutral-900 dark:text-neutral-100">
+          {layout.room.width.toFixed(1)} × {layout.room.length.toFixed(1)} × {layout.room.height.toFixed(1)} m
         </div>
-        <div className="text-gray-500">
+        <div className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
           {layout.objects.length} objects — tap to select, drag to move
         </div>
         {totals.newSpend > 0 && (
-          <div className="mt-1 border-t border-black/10 pt-1 font-medium text-gray-700">
-            New spend: {formatPrice(totals.newSpend)}
+          <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-black/10 pt-2 dark:border-white/10">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-neutral-400">New spend</span>
+            <span className="font-mono text-base font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+              {formatPrice(totals.newSpend)}
+            </span>
           </div>
         )}
-        {saving && <div className="text-gray-400">Saving…</div>}
+        {saving && <div className="mt-1 text-[11px] text-neutral-400">Saving…</div>}
         {/* Room shape lives with the room readout, not inside the furniture
             catalog — it is a property of the scan, not something you add. */}
         <button
           onClick={() => setRoomPanelOpen((v) => !v)}
           aria-expanded={roomPanelOpen}
-          className="mt-2 w-full rounded border border-black/10 px-2 py-1 text-[11px] text-neutral-600 hover:bg-black/5 dark:border-white/15 dark:text-neutral-300 dark:hover:bg-white/10"
+          className="mt-3 w-full rounded-lg border border-black/10 px-2 py-1.5 text-[11px] font-medium text-neutral-600 hover:bg-black/5 dark:border-white/15 dark:text-neutral-300 dark:hover:bg-white/10"
         >
           {roomPanelOpen ? "Close room settings" : "Room settings"}
         </button>
@@ -1225,16 +1275,16 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
       {/* Bottom action bar. Rotate and delete act on the selection, so they
           stay disabled until there is one rather than disappearing — a
           control that vanishes is harder to find the second time. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center pl-4 pr-24">
+      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex items-center justify-center gap-3 pl-4 pr-4">
         {/* One row, always. When the viewport is too narrow for every control
             the bar scrolls sideways rather than wrapping into a second row that
             covers the room. */}
-        <div className="pointer-events-auto flex max-w-full flex-nowrap items-center gap-1 overflow-x-auto rounded-full bg-white/95 p-1.5 shadow-lg backdrop-blur [scrollbar-width:none] dark:bg-neutral-900/95">
+        <div className="pointer-events-auto flex max-w-full flex-nowrap items-center gap-1.5 overflow-x-auto rounded-full bg-white/95 p-2 shadow-lg backdrop-blur [scrollbar-width:none] dark:bg-neutral-900/95">
           <button
             onClick={undo}
             disabled={historyCounts.past === 0}
             title="Undo (Ctrl+Z)"
-            className="rounded-full px-3 py-2 text-sm hover:bg-black/5 disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-white/10"
+            className="rounded-full px-4 py-2.5 text-sm hover:bg-black/5 disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-white/10"
           >
             Undo
           </button>
@@ -1242,16 +1292,16 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
             onClick={redo}
             disabled={historyCounts.future === 0}
             title="Redo (Ctrl+Shift+Z)"
-            className="rounded-full px-3 py-2 text-sm hover:bg-black/5 disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-white/10"
+            className="rounded-full px-4 py-2.5 text-sm hover:bg-black/5 disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-white/10"
           >
             Redo
           </button>
-          <span className="mx-1 h-6 w-px bg-black/10 dark:bg-white/10" />
+          <span className="mx-1 h-7 w-px bg-black/10 dark:bg-white/10" />
           <button
             onClick={() => rotateSelected(-Math.PI / 8)}
             disabled={!selected}
             title="Rotate left 22.5°"
-            className="rounded-full px-3 py-2 text-sm disabled:opacity-30 enabled:hover:bg-black/5 dark:enabled:hover:bg-white/10"
+            className="rounded-full px-4 py-2.5 text-sm disabled:opacity-30 enabled:hover:bg-black/5 dark:enabled:hover:bg-white/10"
           >
             ⟲
           </button>
@@ -1259,7 +1309,7 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
             onClick={() => rotateSelected(Math.PI / 8)}
             disabled={!selected}
             title="Rotate right 22.5°"
-            className="rounded-full px-3 py-2 text-sm disabled:opacity-30 enabled:hover:bg-black/5 dark:enabled:hover:bg-white/10"
+            className="rounded-full px-4 py-2.5 text-sm disabled:opacity-30 enabled:hover:bg-black/5 dark:enabled:hover:bg-white/10"
           >
             ⟳
           </button>
@@ -1267,19 +1317,19 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
             onClick={deleteSelected}
             disabled={!selected}
             title="Remove from room"
-            className="rounded-full px-3 py-2 text-sm text-red-600 disabled:opacity-30 enabled:hover:bg-red-50 dark:enabled:hover:bg-red-950/40"
+            className="rounded-full px-4 py-2.5 text-sm text-red-600 disabled:opacity-30 enabled:hover:bg-red-50 dark:enabled:hover:bg-red-950/40"
           >
             Delete
           </button>
-          <span className="mx-1 h-6 w-px bg-black/10 dark:bg-white/10" />
+          <span className="mx-1 h-7 w-px bg-black/10 dark:bg-white/10" />
           <button
             onClick={() => setSnapEnabled((v) => !v)}
             aria-pressed={snapEnabled}
             title="Snap furniture flush to walls when dragged near them"
             className={
               snapEnabled
-                ? "rounded-full bg-blue-600 px-3 py-2 text-sm text-white"
-                : "rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                ? "rounded-full bg-blue-600 px-4 py-2.5 text-sm text-white"
+                : "rounded-full px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
             }
           >
             Edge snap
@@ -1288,41 +1338,43 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
             onClick={() => setLightsOn((v) => !v)}
             aria-pressed={!lightsOn}
             title="Turn the room lights off to see lamps, LED runs and the projector"
-            className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+            className="rounded-full px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
           >
             {lightsOn ? "Lights off" : "Lights on"}
           </button>
-          <button onClick={() => zoom(true)} title="Zoom in" className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10">+</button>
-          <button onClick={() => zoom(false)} title="Zoom out" className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10">−</button>
-          <span className="mx-1 h-6 w-px bg-black/10 dark:bg-white/10" />
+          <button onClick={() => zoom(true)} title="Zoom in" className="rounded-full px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/10">+</button>
+          <button onClick={() => zoom(false)} title="Zoom out" className="rounded-full px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/10">−</button>
+          <span className="mx-1 h-7 w-px bg-black/10 dark:bg-white/10" />
           <button
             onClick={handleSnapshot}
             disabled={snapshotting}
-            className="rounded-full px-3 py-2 text-sm hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"
+            title="Save a picture and costed shopping list"
+            className="flex items-center gap-1.5 rounded-full px-4 py-2.5 text-sm hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"
           >
+            <IconCamera className="h-4 w-4" />
             {snapshotting ? "Saving…" : "Snapshot"}
           </button>
-          {/* The social workstream's entire integration ask: one link. */}
           <button
             onClick={resetRoom}
             title="Put the room back as it was scanned"
-            className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+            className="flex items-center gap-1.5 rounded-full px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
           >
+            <IconReset className="h-4 w-4" />
             Reset
           </button>
-          <a
-            href="/rooms"
-            className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
-          >
-            Rooms
-          </a>
-          <a
-            href={`/share?session=${sessionId}`}
-            className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
-          >
-            Share
-          </a>
         </div>
+
+        {/* Separated from the rest deliberately — sharing leaves this room
+            and goes public, which is a different kind of action from
+            everything else in the bar. The social workstream's entire
+            integration ask was one link to /share?session=. */}
+        <a
+          href={`/share?session=${sessionId}`}
+          title="Share this design to Plans"
+          className="pointer-events-auto flex flex-shrink-0 items-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-medium text-white shadow-lg hover:bg-blue-700"
+        >
+          <IconSend className="h-4 w-4" />
+          Share</a>
       </div>
 
       {/* A finished design is two things: a picture to share, and the list of

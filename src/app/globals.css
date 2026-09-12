@@ -25,6 +25,14 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Native <button> defaults to the arrow cursor in most browsers - only <a>
+   gets the pointer hand for free. Applies everywhere (the scanner, the
+   editor, and the plans layer all use plain <button>s), so it belongs here
+   rather than repeated per component. */
+button:not(:disabled) {
+  cursor: pointer;
+}
+
 /* --- Social layer ("plans") ------------------------------------------------
    Scoped to .plans so the feed's drafting palette can't leak into the
    scanner and room views, which have their own look. The subject here is

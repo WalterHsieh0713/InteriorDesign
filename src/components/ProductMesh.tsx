@@ -72,7 +72,21 @@ export default function ProductMesh({ modelUrl, dimensions, mount, exact = false
         dimensions[2] / safe(size.z)
       );
     }
-    root.position.sub(centre);
+    // Centre X/Z on the mesh's own geometry, but anchor Y to our recorded
+    // height rather than the mesh's own true one. Everywhere an object's
+    // position is computed (placement.ts) it assumes position[1] is the
+    // centre and the object's bottom sits exactly dimensions[1] / 2 below
+    // that — true by construction for a rescaled stand-in, since it's been
+    // scaled to match dimensions exactly. An "exact" IKEA asset is kept at
+    // its own real size instead, and that can differ from our recorded
+    // number by a few millimetres to a couple of centimetres — enough to
+    // read as the object floating just above the floor. Anchoring to the
+    // same number placement.ts already assumed, rather than the mesh's own
+    // true centre, is what actually makes it rest there.
+    root.position.x -= centre.x;
+    root.position.z -= centre.z;
+    root.position.y -= box.min.y;
+    inner.position.y -= dimensions[1] / 2;
     wrapper.add(inner);
 
     // Materials are shared across every clone of a model, so tweaking opacity
