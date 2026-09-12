@@ -623,16 +623,36 @@ function Scene({
   // Everything solid enough to stand between a camera and a surface, so the
   // colour sampling can tell "this wall is grey" from "a grey cabinet is in
   // front of this wall".
+  //
+  // The walls belong in here as much as the furniture does. Without them a
+  // camera standing in one corner samples colour straight *through* the wall
+  // behind it — off the far side of the room, out a window, or off the empty
+  // floor beyond the room's real outline, since the floor is sampled across
+  // its full bounding rectangle. Including them also means points outside the
+  // room's true shape get no unobstructed view from anywhere inside it, so
+  // they contribute nothing rather than contributing nonsense.
   const occluders = useMemo(
     () =>
-      prepareOccluders(
-        layout.objects.map((o) => ({
+      prepareOccluders([
+        ...layout.objects.map((o) => ({
           position: o.position,
           rotationY: o.rotationY,
           dimensions: o.dimensions,
-        }))
-      ),
-    [layout.objects]
+        })),
+        ...(layout.walls ?? []).map((w) => ({
+          position: w.position,
+          rotationY: w.rotationY,
+          // RoomPlan reports walls as near-zero-thickness planes. Give them
+          // real depth so they block reliably instead of being a surface a
+          // ray can skim along the edge of.
+          dimensions: [w.dimensions[0], w.dimensions[1], Math.max(w.dimensions[2], 0.08)] as [
+            number,
+            number,
+            number,
+          ],
+        })),
+      ]),
+    [layout.objects, layout.walls]
   );
 
   return (

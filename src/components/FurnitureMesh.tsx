@@ -208,7 +208,14 @@ export default function FurnitureMesh(props: Props) {
   return (
     <DetailMap.Provider value={map}>
       <FaceColor.Provider value={faceColor}>
-        <FurnitureGeometry {...props} />
+        {/* A colour measured off the object's own pixels beats colorize's
+            guess, so it becomes the whole object's colour rather than just
+            the one sampled panel's. Previously a chair's backrest got the
+            real colour while its seat and legs stayed whatever Gemini
+            assumed a chair looks like, which is why chairs came out a
+            uniform catalogue tan. Falls back to colorize, then the category
+            palette, when nothing saw this object. */}
+        <FurnitureGeometry {...props} color={faceColor ?? props.color} />
       </FaceColor.Provider>
     </DetailMap.Provider>
   );

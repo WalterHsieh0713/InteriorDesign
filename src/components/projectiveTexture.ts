@@ -276,10 +276,17 @@ export function dominantPlaneColor(
 ): string | null {
   if (cameras.length === 0) return null;
 
+  // Camera shortlist scales with how big the surface is. Six cameras nearest
+  // the *centre* is fine for a 2m wall, but a 9m floor sampled that way is
+  // read almost entirely from whoever stood in the middle of the room — its
+  // edges get only grazing views or none, which is exactly where a floor's
+  // colour goes wrong.
+  const span = Math.max(target.xAxis.length(), target.yAxis.length());
+  const poolSize = Math.max(6, Math.min(cameras.length, Math.round(span * 3)));
   const nearby = cameras
     .map((camera) => ({ camera, distance: camera.position.distanceTo(target.center) }))
     .sort((a, b) => a.distance - b.distance)
-    .slice(0, 6)
+    .slice(0, poolSize)
     .map((entry) => entry.camera);
 
   const worldPos = new THREE.Vector3();
