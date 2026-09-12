@@ -1,5 +1,6 @@
 import { CatalogItemSchema, type CatalogItem } from "./catalogItem";
 import { GENERATED_ITEMS } from "./catalog.generated";
+import { ACCESSORY_ITEMS } from "./catalog.accessories";
 import { MANUAL_ITEMS } from "./catalog.manual";
 import type { ObjectCategory } from "./roomLayoutSchema";
 
@@ -8,6 +9,7 @@ import type { ObjectCategory } from "./roomLayoutSchema";
 function merge(): CatalogItem[] {
   const byId = new Map<string, CatalogItem>();
   for (const item of GENERATED_ITEMS) byId.set(item.id, item);
+  for (const item of ACCESSORY_ITEMS) byId.set(item.id, item);
   for (const item of MANUAL_ITEMS) byId.set(item.id, item);
   return [...byId.values()];
 }

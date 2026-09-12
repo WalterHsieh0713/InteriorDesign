@@ -8,13 +8,15 @@ import type { ItemBinding, RoomLayout } from "@/lib/roomLayoutSchema";
 import { CATALOG_BY_ID, formatPrice } from "@/lib/catalog";
 import { modelUrlFor, toBinding, toDimensions, type CatalogItem } from "@/lib/catalogItem";
 import { initialPlacement, mountOf, snapToWall, supportHeightAt } from "@/lib/placement";
-import { availablePresets, segmentsFor, type LedPreset, type LedPresetId } from "@/lib/ledPresets";
+import { availablePresets, rollFor, runLength, segmentsFor, type LedPreset, type LedPresetId } from "@/lib/ledPresets";
+import { projectionFor } from "@/lib/projection";
 import { FRAME_DEPTH, posterLabel, type PosterArt, type PosterSize } from "@/lib/posters";
 import FurnitureMesh from "./FurnitureMesh";
 import ProductMesh from "./ProductMesh";
 import CatalogPanel from "./CatalogPanel";
 import PosterMesh from "./PosterMesh";
 import LedStrips from "./LedStrips";
+import AccessoryMesh, { ProjectionScreen, accessoryKind } from "./AccessoryMesh";
 import { getTexture, type TextureKind } from "./textures";
 import { prepareCameras, bakePlaneTexture, type PreparedCamera } from "./projectiveTexture";
 
@@ -256,6 +258,7 @@ function DraggableObject({
   const posterArt = obj.preset?.startsWith("poster:")
     ? (obj.preset.split(":")[1] as PosterArt)
     : null;
+  const accessory = item ? accessoryKind(item.styleTags) : null;
   // The object's own sampled color when we have one — that's what makes a
   // render recognizable as someone's actual room. Category palette is just
   // the fallback for older layouts and the LiDAR path.
@@ -271,7 +274,14 @@ function DraggableObject({
         onDragStart(obj.id, obj.position[1], e);
       }}
     >
-      {posterArt ? (
+      {accessory ? (
+        <AccessoryMesh
+          kind={accessory}
+          dimensions={obj.dimensions}
+          color={item?.dominantHex ?? color}
+          selected={isSelected}
+        />
+      ) : posterArt ? (
         <PosterMesh art={posterArt} dimensions={obj.dimensions} selected={isSelected} />
       ) : productModelUrl && item ? (
         <Suspense
@@ -520,6 +530,14 @@ function Scene({
             color={o.color ?? "#8b5cf6"}
           />
         ))}
+      {/* What each projector is actually throwing, at true size on the wall it
+          faces. Rotate the projector and the image walks around the room. */}
+      {objects.map((o) => {
+        const cat = o.binding.source === "catalog" ? CATALOG_BY_ID.get(o.binding.catalogItemId) : null;
+        if (!cat || accessoryKind(cat.styleTags) !== "projector") return null;
+        const proj = projectionFor(o, layout.room);
+        return proj ? <ProjectionScreen key={`proj-${o.id}`} projection={proj} /> : null;
+      })}
       {objects
         .filter((o) => !o.preset?.startsWith("led:"))
         .map((obj) => (
@@ -750,10 +768,16 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
 
   const addLed = useCallback(
     (preset: LedPreset) => {
+      const current = layoutRef.current;
+      if (!current) return;
       mutateObjects((objects) => {
         // One run per preset — installing "ceiling perimeter" twice is not a
         // thing, and two identical runs just double the light.
         const existing = objects.filter((o) => o.preset !== `led:${preset.id}`);
+        // How much strip this run actually needs decides which roll you buy,
+        // and therefore what it costs.
+        const metres = runLength(segmentsFor(preset.id, current.room, objects));
+        const roll = rollFor(metres);
         return [
           ...existing,
           {
@@ -768,9 +792,9 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
             color: "#8b5cf6",
             binding: {
               source: "custom" as const,
-              label: `LED strip · ${preset.label}`,
-              priceCents: null,
-              url: null,
+              label: `${roll.name} · ${preset.label} (${metres.toFixed(1)}m run)`,
+              priceCents: roll.priceCents,
+              url: roll.productUrl,
             },
             preset: `led:${preset.id}`,
           },

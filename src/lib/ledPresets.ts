@@ -160,3 +160,45 @@ export function runLength(segments: LedSegment[]): number {
     return total + Math.hypot(dx, dy, dz);
   }, 0);
 }
+
+/**
+ * The actual strip you have to buy to install a run.
+ *
+ * Both rolls cost the same, so the only question a run has to answer is
+ * whether 50 feet is enough. A ceiling perimeter in a typical dorm comes to
+ * about 14m, which it is — just.
+ */
+export type LedProduct = {
+  id: string;
+  name: string;
+  brand: string;
+  priceCents: number;
+  productUrl: string;
+  /** Strip on the roll, in metres. */
+  lengthM: number;
+};
+
+export const LED_PRODUCTS: LedProduct[] = [
+  {
+    id: "amzn-B0FN43F8G2",
+    name: "KSIPZE LED Strip Lights, 50 ft",
+    brand: "KSIPZE",
+    priceCents: 1499,
+    productUrl: "https://www.amazon.com/dp/B0FN43F8G2",
+    lengthM: 15.24,
+  },
+  {
+    id: "amzn-B09V366BDY",
+    name: "KSIPZE LED Strip Lights, 100 ft",
+    brand: "KSIPZE",
+    priceCents: 1499,
+    productUrl: "https://www.amazon.com/dp/B09V366BDY",
+    lengthM: 30.48,
+  },
+];
+
+/** The shortest roll that covers a run, or the longest one if nothing does. */
+export function rollFor(runMetres: number): LedProduct {
+  const sorted = [...LED_PRODUCTS].sort((a, b) => a.lengthM - b.lengthM);
+  return sorted.find((p) => p.lengthM >= runMetres) ?? sorted[sorted.length - 1];
+}
