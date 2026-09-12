@@ -59,6 +59,13 @@ const OVERRIDES = {
   // LACK: 35 3/8 x 21 5/8 x 17 3/4.
   "ikea-00104291": { dims: [inch(35.375), inch(17.75), inch(21.625)], price: 2999 },
 
+  // BRIMNES: 23 5/8 x 13 3/4 x 74 3/4, all three on the page.
+  "ikea-90301225": { dims: [inch(23.625), inch(74.75), inch(13.75)], price: 14900 },
+
+  // LINDBYN: the page gives height and width only. A mirror's depth is never
+  // published, so it stays inferred from a real mirror model.
+  "ikea-40597234": { dims: [inch(23.625), inch(66.875), null], price: 10999 },
+
   // ALEX: the listing card states 14 1/8 x 27 1/2 — width by HEIGHT. Depth is
   // not published anywhere on the card, so it stays inferred.
   "ikea-00473546": { dims: [inch(14.125), inch(27.5), null], price: 9500 },

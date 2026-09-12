@@ -80,6 +80,33 @@ export const ItemBindingSchema = z.discriminatedUnion("source", [
 
 export type ItemBinding = z.infer<typeof ItemBindingSchema>;
 
+export const WALL_SIDES = ["north", "south", "east", "west"] as const;
+export type WallSide = (typeof WALL_SIDES)[number];
+
+// Real rooms are not four flat rectangles. Dorms have boxed-in structural
+// columns, chimney breasts, radiator housings and service risers, and a piece
+// of furniture that ignores them ends up modelled inside a concrete pillar.
+//
+// A feature is a box attached to one wall: `offset` places it along that wall
+// from the wall's centre, `depth` is how far it intrudes into the room, and
+// `baseY` is how high off the floor it starts (a boxed pipe run near the
+// ceiling starts high). A "recess" is the same box cut inward instead.
+//
+// Optional and additive: a scan that reports nothing still produces a plain
+// rectangular room, exactly as before.
+export const WallFeatureSchema = z.object({
+  id: z.string(),
+  wall: z.enum(WALL_SIDES),
+  kind: z.enum(["pillar", "bump", "recess"]),
+  offset: z.number(),
+  width: z.number().positive(),
+  height: z.number().positive(),
+  depth: z.number().positive(),
+  baseY: z.number().min(0).default(0),
+});
+
+export type WallFeature = z.infer<typeof WallFeatureSchema>;
+
 // Colors and materials are optional throughout: the LiDAR path has no camera
 // imagery to sample them from, and layouts captured before this existed must
 // keep validating. Anything missing falls back to the category palette.
@@ -96,6 +123,9 @@ export const RoomLayoutSchema = z.object({
     // daylight one should not be lit identically. Defaults to neutral white
     // when absent.
     lightColor: hexColor.optional(),
+    // Columns, boxed-in pipework and alcoves the scan found. Absent means a
+    // plain rectangular room, which is what every layout saved so far is.
+    wallFeatures: z.array(WallFeatureSchema).optional(),
   }),
   objects: z.array(
     z.object({

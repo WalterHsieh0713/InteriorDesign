@@ -19,6 +19,7 @@ import PosterMesh from "./PosterMesh";
 import LedStrips from "./LedStrips";
 import AccessoryMesh, { ProjectionScreen, accessoryKind } from "./AccessoryMesh";
 import ShoppingList from "./ShoppingList";
+import WallFeatures from "./WallFeatures";
 import { getTexture, type TextureKind } from "./textures";
 import { prepareCameras, bakePlaneTexture, type PreparedCamera } from "./projectiveTexture";
 
@@ -124,6 +125,39 @@ function WallPanel({
       {children}
     </mesh>
   );
+}
+
+/**
+ * Where a ray meets the inside of the room, across all four walls at once.
+ *
+ * Picking the wall fresh on every pointer move is what lets a poster travel
+ * around a corner: the moment the pointer crosses onto the next wall, that
+ * wall is simply the nearest hit and the piece follows it.
+ */
+function nearestWallPoint(ray: THREE.Ray, room: RoomLayout["room"]): THREE.Vector3 | null {
+  const hw = room.width / 2;
+  const hl = room.length / 2;
+  const planes: { plane: THREE.Plane; within: (p: THREE.Vector3) => boolean }[] = [
+    { plane: new THREE.Plane(new THREE.Vector3(0, 0, 1), hl), within: (p) => Math.abs(p.x) <= hw + 0.2 },
+    { plane: new THREE.Plane(new THREE.Vector3(0, 0, -1), hl), within: (p) => Math.abs(p.x) <= hw + 0.2 },
+    { plane: new THREE.Plane(new THREE.Vector3(1, 0, 0), hw), within: (p) => Math.abs(p.z) <= hl + 0.2 },
+    { plane: new THREE.Plane(new THREE.Vector3(-1, 0, 0), hw), within: (p) => Math.abs(p.z) <= hl + 0.2 },
+  ];
+
+  let best: THREE.Vector3 | null = null;
+  let bestDist = Infinity;
+  const hit = new THREE.Vector3();
+  for (const { plane, within } of planes) {
+    if (!ray.intersectPlane(plane, hit)) continue;
+    if (hit.y < -0.3 || hit.y > room.height + 0.3) continue;
+    if (!within(hit)) continue;
+    const d = ray.origin.distanceTo(hit);
+    if (d < bestDist) {
+      bestDist = d;
+      best = hit.clone();
+    }
+  }
+  return best;
 }
 
 function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedCamera[] }) {
@@ -477,12 +511,25 @@ function Scene({
       const dragged = latest.current.find((o) => o.id === draggingId);
       if (!dragged) return;
       const mount = mountOf(dragged);
-      const { x, y, z } = intersection.current;
+      // Wall pieces re-derive their own point below; this is the floor plane.
+      const { x, z } = intersection.current;
       let next: [number, number, number];
 
       if (mount === "wall") {
-        // Free vertically, pinned to the wall.
-        next = snapToWall(dragged, x, y, z, layout.room).position;
+        // Re-pick the wall every frame rather than locking to the one the
+        // piece started on. Locking is what made a poster stick at a corner:
+        // once the pointer passed 90 degrees, it was still being projected
+        // onto a wall that was no longer in front of it.
+        const onWall = nearestWallPoint(raycaster.ray, layout.room);
+        if (!onWall) return;
+        next = snapToWall(dragged, onWall.x, onWall.y, onWall.z, layout.room).position;
+        const facing = snapToWall(dragged, onWall.x, onWall.y, onWall.z, layout.room).rotationY;
+        onObjectsChange(
+          latest.current.map((o) =>
+            o.id === draggingId ? { ...o, position: next, rotationY: facing } : o
+          )
+        );
+        return;
       } else if (mount === "tabletop") {
         // Rest on whatever is underneath: a desk lamp rises onto a tall
         // nightstand and drops onto a lower desk without anyone typing a height.
@@ -575,6 +622,7 @@ function Scene({
         <meshBasicMaterial visible={false} />
       </mesh>
       <Walls room={layout.room} cameras={cameras} />
+      <WallFeatures room={layout.room} />
       {/* A light strip has no body to drag — it follows an edge of the room or
           of a piece of furniture, so it is drawn from the room rather than
           placed in it, and it re-runs itself when that furniture moves. */}

@@ -677,5 +677,60 @@ export const MANUAL_ITEMS: CatalogItem[] = [
       "height"
     ],
     "verified": false
+  },
+  {
+    "id": "ikea-90301225",
+    "name": "BRIMNES Bookcase",
+    "brand": "IKEA",
+    "category": "shelf",
+    "priceCents": 14900,
+    "productUrl": "https://www.ikea.com/us/en/p/brimnes-bookcase-white-90301225/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/brimnes-bookcase-white__1590279_pe1038918_s5.jpg",
+    "dimensions": [
+      0.6,
+      1.899,
+      0.349
+    ],
+    "modelId": "abo-b07ppnncm2",
+    "mount": "floor",
+    "dominantHex": "#F2F2F0",
+    "styleTags": [
+      "shelf",
+      "white",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height",
+      "depth"
+    ],
+    "verified": true
+  },
+  {
+    "id": "ikea-40597234",
+    "name": "LINDBYN Mirror",
+    "brand": "IKEA",
+    "category": "mirror",
+    "priceCents": 10999,
+    "productUrl": "https://www.ikea.com/us/en/p/lindbyn-mirror-black-40597234/",
+    "imageUrl": "https://www.ikea.com/us/en/images/products/lindbyn-mirror-black__1374978_pe960159_s5.jpg",
+    "dimensions": [
+      0.6,
+      1.699,
+      0.042
+    ],
+    "modelId": "abo-b07b8nw6gg",
+    "mount": "wall",
+    "dominantHex": "#2B2B2D",
+    "styleTags": [
+      "mirror",
+      "black",
+      "ikea"
+    ],
+    "measuredAxes": [
+      "width",
+      "height"
+    ],
+    "verified": false
   }
 ];
