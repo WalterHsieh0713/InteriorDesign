@@ -54,10 +54,16 @@ function CatalogPanel({ open, onClose, swapTargetLabel, onPick, onAddPoster, onA
     return category === "all" ? base : base.filter((i) => i.category === category);
   }, [category, query]);
 
-  if (!open) return null;
-
+  // Stays mounted so it can slide rather than blink into existence, and so a
+  // half-typed search and a chosen category survive closing and reopening it.
   return (
-    <aside className="absolute right-0 top-0 z-20 flex h-full w-full max-w-sm flex-col border-l border-black/10 bg-white/95 backdrop-blur dark:border-white/10 dark:bg-neutral-900/95">
+    <aside
+      aria-hidden={!open}
+      inert={!open ? true : undefined}
+      className={`absolute right-0 top-0 z-20 flex h-full w-full max-w-sm flex-col border-l border-black/10 bg-white/95 backdrop-blur transition-transform duration-200 ease-out motion-reduce:transition-none dark:border-white/10 dark:bg-neutral-900/95 ${
+        open ? "translate-x-0 shadow-2xl" : "pointer-events-none translate-x-full"
+      }`}
+    >
       <header className="flex items-start justify-between gap-3 border-b border-black/10 p-4 dark:border-white/10">
         <div>
           <h2 className="text-sm font-semibold">Catalog</h2>

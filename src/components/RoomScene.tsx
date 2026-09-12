@@ -712,7 +712,12 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
         const res = await fetch(`/api/layout?session=${sessionId}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to load layout");
-        if (!cancelled) setLayout(restOnFloor(data));
+        if (!cancelled) {
+          const fixed = restOnFloor(data);
+          // The room as it was scanned, kept so Reset can return to it.
+          originalLayout.current = fixed;
+          setLayout(fixed);
+        }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load layout");
       }
@@ -749,9 +754,39 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
     layoutRef.current = layout;
   }, [layout]);
 
+  /**
+   * Every committed change, so it can be taken back.
+   *
+   * Only committed states are recorded — a drag pushes one entry when the
+   * pointer comes up, not one per frame, or a single slide across the room
+   * would bury every earlier step under three hundred identical ones.
+   */
+  const history = useRef<{ past: RoomLayout[]; future: RoomLayout[] }>({ past: [], future: [] });
+  // Mirrored into state because the buttons read these during render, and a
+  // ref read at render time is not something React can depend on.
+  const [historyCounts, setHistoryCounts] = useState({ past: 0, future: 0 });
+  const originalLayout = useRef<RoomLayout | null>(null);
+
   const persist = useCallback(
-    async (next: RoomLayout) => {
+    async (next: RoomLayout, record = true) => {
+      if (record) {
+        const current = layoutRef.current;
+        if (current) {
+          history.current.past.push(current);
+          // Far more than anyone reaches for, and bounded so a long session
+          // cannot grow the stack without limit.
+          if (history.current.past.length > 60) history.current.past.shift();
+          // A new action after undoing abandons the redo branch, which is what
+          // every editor does and what people expect.
+          history.current.future = [];
+        }
+      }
+      setHistoryCounts({
+        past: history.current.past.length,
+        future: history.current.future.length,
+      });
       setLayout(next);
+      layoutRef.current = next;
       setSaving(true);
       try {
         await fetch("/api/layout", {
@@ -765,6 +800,33 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
     },
     [sessionId]
   );
+
+  const undo = useCallback(() => {
+    const current = layoutRef.current;
+    const previous = history.current.past.pop();
+    if (!current || !previous) return;
+    history.current.future.push(current);
+    setSelectedId(null);
+    void persist(previous, false);
+  }, [persist]);
+
+  const redo = useCallback(() => {
+    const current = layoutRef.current;
+    const next = history.current.future.pop();
+    if (!current || !next) return;
+    history.current.past.push(current);
+    setSelectedId(null);
+    void persist(next, false);
+  }, [persist]);
+
+  const resetRoom = useCallback(() => {
+    const original = originalLayout.current;
+    if (!original) return;
+    setSelectedId(null);
+    // Recorded, so Reset is itself undoable — it throws away every purchase
+    // decision in the room and should not be a one-way door.
+    void persist(original, true);
+  }, [persist]);
 
   // Mid-drag. Deliberately does NOT save: a PUT per pointermove would be
   // hundreds of writes per drag.
@@ -965,8 +1027,11 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
   const zoom = useCallback((inward: boolean) => {
     const c = controlsRef.current;
     if (!c) return;
-    if (inward) c.dollyIn?.(1.18);
-    else c.dollyOut?.(1.18);
+    // dollyIn/dollyOut read backwards here: OrbitControls names them after
+    // what happens to the spherical radius, not to the apparent size of the
+    // room, so "+" has to call dollyOut.
+    if (inward) c.dollyOut?.(1.18);
+    else c.dollyIn?.(1.18);
     c.update?.();
   }, []);
 
@@ -988,6 +1053,28 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
     setSnapshotUrl(renderer.domElement.toDataURL("image/png"));
     setSnapshotting(false);
   }, []);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      // Never steal a keystroke from someone typing a price or a room size.
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (mod && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        redo();
+      } else if (e.key === "Escape") {
+        setSelectedId(null);
+        setCatalogOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
 
   const shoppingLines = useMemo(
     () => buildShoppingList(layout?.objects ?? []),
@@ -1118,6 +1205,23 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           </button>
           <span className="mx-1 h-6 w-px bg-black/10 dark:bg-white/10" />
           <button
+            onClick={undo}
+            disabled={historyCounts.past === 0}
+            title="Undo (Ctrl+Z)"
+            className="rounded-full px-3 py-2 text-sm hover:bg-black/5 disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-white/10"
+          >
+            Undo
+          </button>
+          <button
+            onClick={redo}
+            disabled={historyCounts.future === 0}
+            title="Redo (Ctrl+Shift+Z)"
+            className="rounded-full px-3 py-2 text-sm hover:bg-black/5 disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-white/10"
+          >
+            Redo
+          </button>
+          <span className="mx-1 h-6 w-px bg-black/10 dark:bg-white/10" />
+          <button
             onClick={() => rotateSelected(-Math.PI / 8)}
             disabled={!selected}
             title="Rotate left 22.5°"
@@ -1165,6 +1269,13 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
             {snapshotting ? "Saving…" : "Snapshot"}
           </button>
           {/* The social workstream's entire integration ask: one link. */}
+          <button
+            onClick={resetRoom}
+            title="Put the room back as it was scanned"
+            className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+          >
+            Reset
+          </button>
           <a
             href="/rooms"
             className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
