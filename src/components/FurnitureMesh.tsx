@@ -54,6 +54,7 @@ function Panel({
   metalness = 0.05,
   transparent = false,
   usePhoto = false,
+  untextured = false,
 }: {
   size: [number, number, number];
   offset: [number, number, number];
@@ -65,6 +66,8 @@ function Panel({
   /** This is the panel standing in for the object's sampled face (see
    * faceGeometryFor) — only one Panel per object should set this. */
   usePhoto?: boolean;
+  /** Skip the procedural grain. For glass, which has no grain to have. */
+  untextured?: boolean;
 }) {
   const detailMap = useContext(DetailMap);
   const sampledFace = useContext(FaceColor);
@@ -76,7 +79,7 @@ function Panel({
       <boxGeometry args={size.map((v) => Math.max(v, 0.01)) as [number, number, number]} />
       <meshStandardMaterial
         color={resolved}
-        map={detailMap}
+        map={untextured ? null : detailMap}
         transparent={transparent || opacity < 1}
         opacity={opacity}
         roughness={roughness}
@@ -582,19 +585,30 @@ function FurnitureGeometry({ category, dimensions, color, opacity }: Props) {
     }
 
     case "window": {
+      // Glass, not joinery.
+      //
+      // This used to be a dark frame wrapped around a tinted inner pane, both
+      // wearing the same procedural grain every other panel gets — which put
+      // the texture of a wooden surface onto the one thing in the room that is
+      // supposed to read as light coming through it. The scan's sampled colour
+      // made it worse: a window photographed against a bright sky comes back
+      // as something muddy, and that got painted on too.
+      //
+      // So a window is now one clean bluish-white pane, lightly transparent and
+      // untextured, with a fixed colour rather than the measured one. The
+      // point-light RoomScene already places at each window does the rest of
+      // the work of making it read as a source of daylight.
       return (
-        <group>
-          <Panel size={[w, h, d]} offset={[0, 0, 0]} color={dark} opacity={opacity} />
-          <Panel
-            size={[w * 0.85, h * 0.85, d * 0.4]}
-            offset={[0, 0, 0]}
-            color="#a8dadc"
-            opacity={opacity * 0.55}
-            transparent
-            roughness={0.1}
-            metalness={0.1}
-          />
-        </group>
+        <Panel
+          size={[w, h, Math.min(d, 0.06)]}
+          offset={[0, 0, 0]}
+          color="#dae8f4"
+          opacity={opacity * 0.5}
+          transparent
+          untextured
+          roughness={0.08}
+          metalness={0.12}
+        />
       );
     }
 

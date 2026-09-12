@@ -1,6 +1,7 @@
 "use client";
 
 import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Html, Environment } from "@react-three/drei";
 import * as THREE from "three";
@@ -629,6 +630,20 @@ function IconCamera({ className }: { className?: string }) {
         strokeLinejoin="round"
       />
       <circle cx="12" cy="12.5" r="3.2" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+function IconBack({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M19 12H5m0 0 6-6m-6 6 6 6"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -1644,6 +1659,17 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
       {/* Both readouts share one column so the selection panel stacks under
           the room rather than covering it. */}
       <div className="absolute top-3 left-3 z-10 flex w-[230px] flex-col gap-2">
+      {/* A real link to the room index rather than history.back(): the editor
+          is reached from the feed and from shared URLs as often as from
+          /rooms, and a history step would dead-end anyone who opened it
+          directly. */}
+      <Link
+        href="/rooms"
+        className="flex w-fit items-center gap-1.5 rounded-full border border-black/5 bg-white/95 px-3.5 py-2 text-sm font-medium text-neutral-700 shadow-lg backdrop-blur hover:bg-white dark:border-white/10 dark:bg-neutral-900/95 dark:text-neutral-200 dark:hover:bg-neutral-900"
+      >
+        <IconBack className="h-4 w-4" />
+        Rooms
+      </Link>
       <div className="rounded-xl border border-black/5 bg-white/95 px-4 py-3 shadow-lg backdrop-blur dark:border-white/10 dark:bg-neutral-900/95">
         <div className="font-mono text-sm font-semibold tracking-tight tabular-nums text-neutral-900 dark:text-neutral-100">
           {layout.room.width.toFixed(1)} × {layout.room.length.toFixed(1)} × {layout.room.height.toFixed(1)} m
