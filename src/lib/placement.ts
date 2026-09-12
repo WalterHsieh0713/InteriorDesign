@@ -154,3 +154,52 @@ export function initialPlacement(
   }
   return [0, halfH, 0];
 }
+
+/** How close a floor item must come to a wall before it jumps flush against it. */
+export const WALL_SNAP_DISTANCE = 0.28;
+
+/**
+ * Pull a floor-standing item flush against a wall it is being dragged near,
+ * and turn it to face into the room.
+ *
+ * Most furniture in a real dorm lives against a wall, and getting a bookcase
+ * *exactly* flush by hand is fiddly in a 3D view. Returns null when the item
+ * is nowhere near a wall, so free placement is still the default in open floor.
+ */
+export function snapFloorNearWall(
+  item: Obj,
+  x: number,
+  z: number,
+  room: RoomLayout["room"],
+  threshold = WALL_SNAP_DISTANCE
+): { position: [number, number, number]; rotationY: number } | null {
+  const halfW = room.width / 2;
+  const halfL = room.length / 2;
+  const [w, h, d] = item.dimensions;
+
+  // Distance from each wall to the item's nearest face, not its centre.
+  const gaps = {
+    north: z - d / 2 - -halfL,
+    south: halfL - (z + d / 2),
+    west: x - w / 2 - -halfW,
+    east: halfW - (x + w / 2),
+  };
+  const side = (Object.keys(gaps) as (keyof typeof gaps)[]).reduce((a, b) =>
+    gaps[a] <= gaps[b] ? a : b
+  );
+  if (gaps[side] > threshold) return null;
+
+  const clampX = Math.min(halfW - w / 2, Math.max(-halfW + w / 2, x));
+  const clampZ = Math.min(halfL - d / 2, Math.max(-halfL + d / 2, z));
+
+  switch (side) {
+    case "north":
+      return { position: [clampX, h / 2, -halfL + d / 2], rotationY: 0 };
+    case "south":
+      return { position: [clampX, h / 2, halfL - d / 2], rotationY: Math.PI };
+    case "west":
+      return { position: [-halfW + w / 2, h / 2, clampZ], rotationY: Math.PI / 2 };
+    default:
+      return { position: [halfW - w / 2, h / 2, clampZ], rotationY: -Math.PI / 2 };
+  }
+}

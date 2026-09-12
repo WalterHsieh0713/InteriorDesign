@@ -1,13 +1,13 @@
 "use client";
 
 import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
+import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Html, Environment } from "@react-three/drei";
 import * as THREE from "three";
 import type { ItemBinding, RoomLayout } from "@/lib/roomLayoutSchema";
 import { CATALOG_BY_ID, formatPrice } from "@/lib/catalog";
 import { modelUrlFor, toBinding, toDimensions, type CatalogItem } from "@/lib/catalogItem";
-import { initialPlacement, mountOf, snapToWall, supportHeightAt } from "@/lib/placement";
+import { initialPlacement, mountOf, snapFloorNearWall, snapToWall, supportHeightAt } from "@/lib/placement";
 import { availablePresets, rollFor, runLength, segmentsFor, type LedPreset, type LedPresetId } from "@/lib/ledPresets";
 import { projectionFor } from "@/lib/projection";
 import { FRAME_DEPTH, posterLabel, type PosterArt, type PosterSize } from "@/lib/posters";
@@ -83,6 +83,45 @@ class EnvironmentBoundary extends Component<{ children: ReactNode }, { failed: b
   render() {
     return this.state.failed ? null : this.props.children;
   }
+}
+
+/**
+ * A wall that takes itself out of the way when you orbit behind it.
+ *
+ * All four are always in the scene — a room with two walls missing reads as
+ * a stage set. Instead each hides only while the camera is outside it, which
+ * is exactly when it would be between you and the room. `axis`/`sign`
+ * describe which side of the room it is on.
+ */
+function WallPanel({
+  axis,
+  sign,
+  limit,
+  children,
+  ...props
+}: {
+  axis: "x" | "z";
+  sign: 1 | -1;
+  limit: number;
+  children: ReactNode;
+} & React.ComponentProps<"mesh">) {
+  const ref = useRef<THREE.Mesh>(null);
+  useFrame(({ camera: cam }) => {
+    const mesh = ref.current;
+    if (!mesh) return;
+    const beyond = sign > 0 ? cam.position[axis] > limit : cam.position[axis] < -limit;
+    // A small dead zone stops the wall strobing when the camera sits right
+    // on the plane of it.
+    const margin = 0.08;
+    const clearly = sign > 0 ? cam.position[axis] > limit + margin : cam.position[axis] < -limit - margin;
+    if (mesh.visible && beyond && clearly) mesh.visible = false;
+    else if (!mesh.visible && !beyond) mesh.visible = true;
+  });
+  return (
+    <mesh ref={ref} receiveShadow {...props}>
+      {children}
+    </mesh>
+  );
 }
 
 function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedCamera[] }) {
@@ -183,7 +222,7 @@ function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedC
   // A flat guessed wall color stays translucent so you can still see inside
   // while orbiting from outside — but a wall showing real captured pixels is
   // worth looking at directly, so it goes near-opaque instead.
-  const wallOpacity = cameras.length > 0 ? 0.92 : 0.4;
+  const wallOpacity = cameras.length > 0 ? 0.95 : 0.88;
 
   function wallMaterial(photo: THREE.CanvasTexture | null) {
     return (
@@ -209,22 +248,22 @@ function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedC
           roughness={floorPhoto ? 0.75 : floorRoughness}
         />
       </mesh>
-      <mesh position={[0, height / 2, -length / 2]} receiveShadow>
+      <WallPanel axis="z" sign={-1} limit={length / 2} position={[0, height / 2, -length / 2]}>
         <planeGeometry args={[width, height]} />
         {wallMaterial(backWallPhoto)}
-      </mesh>
-      <mesh position={[0, height / 2, length / 2]} rotation={[0, Math.PI, 0]} receiveShadow>
+      </WallPanel>
+      <WallPanel axis="z" sign={1} limit={length / 2} position={[0, height / 2, length / 2]} rotation={[0, Math.PI, 0]}>
         <planeGeometry args={[width, height]} />
         {wallMaterial(frontWallPhoto)}
-      </mesh>
-      <mesh position={[width / 2, height / 2, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
+      </WallPanel>
+      <WallPanel axis="x" sign={1} limit={width / 2} position={[width / 2, height / 2, 0]} rotation={[0, -Math.PI / 2, 0]}>
         <planeGeometry args={[length, height]} />
         {wallMaterial(rightWallPhoto)}
-      </mesh>
-      <mesh position={[-width / 2, height / 2, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
+      </WallPanel>
+      <WallPanel axis="x" sign={-1} limit={width / 2} position={[-width / 2, height / 2, 0]} rotation={[0, Math.PI / 2, 0]}>
         <planeGeometry args={[length, height]} />
         {wallMaterial(leftWallPhoto)}
-      </mesh>
+      </WallPanel>
     </group>
   );
 }
@@ -348,6 +387,8 @@ function Scene({
   objects,
   cameras,
   selectedId,
+  snapEnabled,
+  controlsRef,
   onSelect,
   onObjectsChange,
   onPositionsSettled,
@@ -356,6 +397,8 @@ function Scene({
   objects: RoomLayout["objects"];
   cameras: PreparedCamera[];
   selectedId: string | null;
+  snapEnabled: boolean;
+  controlsRef: React.MutableRefObject<{ dollyIn?: (s: number) => void; dollyOut?: (s: number) => void; update?: () => void } | null>;
   onSelect: (id: string | null) => void;
   onObjectsChange: (objects: RoomLayout["objects"]) => void;
   onPositionsSettled: (objects: RoomLayout["objects"]) => void;
@@ -444,7 +487,19 @@ function Scene({
         const support = supportHeightAt(dragged, x, z, latest.current);
         next = [x, support + dragged.dimensions[1] / 2, z];
       } else {
-        next = [x, dragPlaneY.current, z];
+        // Furniture in a real dorm lives against a wall, and getting something
+        // exactly flush by hand in a 3D view is fiddly. Snapping is a toggle
+        // because sometimes you do want a rug floating in the middle.
+        const snapped = snapEnabled ? snapFloorNearWall(dragged, x, z, layout.room) : null;
+        next = snapped ? snapped.position : [x, dragPlaneY.current, z];
+        if (snapped) {
+          onObjectsChange(
+            latest.current.map((o) =>
+              o.id === draggingId ? { ...o, position: snapped.position, rotationY: snapped.rotationY } : o
+            )
+          );
+          return;
+        }
       }
 
       onObjectsChange(latest.current.map((o) => (o.id === draggingId ? { ...o, position: next } : o)));
@@ -464,7 +519,7 @@ function Scene({
       canvas.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
     };
-  }, [draggingId, camera, raycaster, gl, layout.room, onPositionsSettled, onObjectsChange, onSelect]);
+  }, [draggingId, camera, raycaster, gl, layout.room, onPositionsSettled, onObjectsChange, onSelect, snapEnabled]);
 
   return (
     <>
@@ -550,7 +605,7 @@ function Scene({
           cameras={cameras}
         />
       ))}
-      <OrbitControls enabled={!draggingId} makeDefault />
+      <OrbitControls ref={controlsRef as never} enabled={!draggingId} makeDefault />
     </>
   );
 }
@@ -588,6 +643,8 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [snapshotting, setSnapshotting] = useState(false);
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const controlsRef = useRef<{ dollyIn?: (s: number) => void; dollyOut?: (s: number) => void; update?: () => void } | null>(null);
   const glRef = useRef<THREE.WebGLRenderer | null>(null);
 
   useEffect(() => {
@@ -845,6 +902,16 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
     [layout, selectedId]
   );
 
+  // OrbitControls owns the camera distance, so zooming goes through it rather
+  // than moving the camera behind its back and having it snap on next update.
+  const zoom = useCallback((inward: boolean) => {
+    const c = controlsRef.current;
+    if (!c) return;
+    if (inward) c.dollyIn?.(1.18);
+    else c.dollyOut?.(1.18);
+    c.update?.();
+  }, []);
+
   const handleSnapshot = useCallback(() => {
     const renderer = glRef.current;
     if (!renderer) return;
@@ -933,6 +1000,8 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           objects={layout.objects}
           cameras={cameras}
           selectedId={selectedId}
+          snapEnabled={snapEnabled}
+          controlsRef={controlsRef}
           onSelect={setSelectedId}
           onObjectsChange={handleObjectsChange}
           onPositionsSettled={handlePositionsSettled}
@@ -975,6 +1044,21 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           >
             Delete
           </button>
+          <span className="mx-1 h-6 w-px bg-black/10 dark:bg-white/10" />
+          <button
+            onClick={() => setSnapEnabled((v) => !v)}
+            aria-pressed={snapEnabled}
+            title="Snap furniture flush to walls when dragged near them"
+            className={
+              snapEnabled
+                ? "rounded-full bg-blue-600 px-3 py-2 text-sm text-white"
+                : "rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+            }
+          >
+            Snap
+          </button>
+          <button onClick={() => zoom(true)} title="Zoom in" className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10">+</button>
+          <button onClick={() => zoom(false)} title="Zoom out" className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10">−</button>
           <span className="mx-1 h-6 w-px bg-black/10 dark:bg-white/10" />
           <button
             onClick={handleSnapshot}
