@@ -139,18 +139,44 @@ function faceGeometryFor(
 ): { offset: THREE.Vector3; normal: THREE.Vector3; faceW: number; faceH: number } | null {
   const [w, h, d] = dimensions;
   switch (category) {
-    // Backrest-style categories: the flat panel already rendered at -Z.
+    // A chair's backrest is the top half of its bounding box and nothing
+    // else — below it is legs and open air. Sampling the whole box face
+    // therefore reads mostly the floor and table *behind* the chair, which is
+    // how a room of black chairs came out uniformly table-coloured. These
+    // rectangles match the panels FurnitureGeometry actually draws.
     case "chair":
+      return {
+        offset: new THREE.Vector3(0, h * 0.25, -d / 2),
+        normal: new THREE.Vector3(0, 0, -1),
+        faceW: w * 0.85,
+        faceH: h * 0.5,
+      };
     case "sofa":
+      return {
+        offset: new THREE.Vector3(0, h * 0.25, -d / 2),
+        normal: new THREE.Vector3(0, 0, -1),
+        faceW: w,
+        faceH: h * 0.5,
+      };
+    // These two genuinely are full-height flat backs.
     case "bed":
     case "shelf":
       return { offset: new THREE.Vector3(0, 0, -d / 2), normal: new THREE.Vector3(0, 0, -1), faceW: w, faceH: h };
-    // Screen/front-facing categories: the flat panel already rendered at +Z.
-    // The appliances qualify because their door is drawn as its own thin
-    // panel — projecting onto the full body box instead would smear the
-    // front photo across the sides and back too.
     case "tv":
+      return {
+        offset: new THREE.Vector3(0, h * 0.075, d / 2),
+        normal: new THREE.Vector3(0, 0, 1),
+        faceW: w,
+        faceH: h * 0.85,
+      };
     case "monitor":
+      return {
+        offset: new THREE.Vector3(0, h * 0.12, d / 2),
+        normal: new THREE.Vector3(0, 0, 1),
+        faceW: w,
+        faceH: h * 0.75,
+      };
+    // Front-facing categories whose front really is the whole box face.
     case "door":
     case "refrigerator":
     case "dishwasher":

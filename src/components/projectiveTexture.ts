@@ -237,9 +237,12 @@ function isOccluded(
       }
     }
 
-    // Ignore a hit right at the surface itself — every texel technically
-    // starts on the object it belongs to.
-    if (blocked && far > 0.002 && near < 0.998) return true;
+    // A blocker has to *begin* measurably away from the sample point. Without
+    // the `near` floor, the surface being sampled counts as blocking itself:
+    // a wall's own points sit inside its own box, so every wall occluded
+    // itself and fell back to a flat room-wide colour. Same for a furniture
+    // face, which lies on the box it belongs to.
+    if (blocked && near > 0.01 && near < 0.998) return true;
   }
 
   return false;
