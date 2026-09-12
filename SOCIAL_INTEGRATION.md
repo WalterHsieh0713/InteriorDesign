@@ -264,7 +264,7 @@ serves worst: *"I have a room this size — what did other people do with
 theirs?"* Nobody else can answer that, because nobody else has real measured
 rooms. Today it is buried in an area-band dropdown.
 
-- [ ] **3a — `src/lib/similarity.ts` + "Similar rooms" on the post page.**
+- [x] **3a — DONE.** `src/lib/similarity.ts` + `SimilarRooms` on the post page.
       One scorer, reused everywhere. Same `room_type` scores highest, then
       closeness in `area_m2`, then overlapping `style_tags`, then similar
       object density. Candidates are pre-filtered in SQL to a generous area
