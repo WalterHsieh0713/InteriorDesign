@@ -43,7 +43,20 @@ type SurfaceHit = {
   point: THREE.Vector3;
   /** Outward normal of whatever was hit, pointing back toward the camera. */
   normal: THREE.Vector3;
+  /** Yaw of the object that was hit, when it was an object rather than a wall
+   * or the floor. A keyboard should line up with the desk it's lying on. */
+  hostRotationY?: number;
 };
+
+/** Things that stand on top of something — a desk, a shelf, the floor — as
+ * opposed to being fixed to a wall. These are placed from the bottom edge of
+ * their box rather than its centre, because the bottom edge is the one part
+ * of them that touches a surface the room's geometry actually knows about. */
+const RESTS_ON_SURFACE = new Set(["monitor", "keyboard", "speaker", "books", "plant"]);
+
+/** Of those, the ones that lie down flat. Their box's vertical extent in the
+ * image is depth across the desk, not height off it. */
+const LIES_FLAT = new Set(["keyboard", "books"]);
 
 function rayFromPixel(
   frame: CameraFrame,
@@ -150,6 +163,7 @@ function hitBox(
     distance: near,
     point: origin.clone().addScaledVector(direction, near),
     normal,
+    hostRotationY: object.rotationY,
   };
 }
 
@@ -183,8 +197,17 @@ export function placeDetection(
   frame: CameraFrame,
   layout: RoomLayout
 ): PlacedObject | null {
+  const resting = RESTS_ON_SURFACE.has(detection.category);
+
   const u = (detection.xmin + detection.xmax) / 2;
-  const v = (detection.ymin + detection.ymax) / 2;
+  // For anything standing on a surface, aim at the BOTTOM edge of the box
+  // rather than its centre. A monitor isn't part of the scanned geometry, so
+  // a ray through its middle passes straight through it and lands on the wall
+  // behind — which is why monitors ended up pinned to the wall, hovering over
+  // the desk they're really sitting on. The bottom edge is the one part of
+  // the object touching something the room does know about, so that ray stops
+  // on the desktop, at the object's base.
+  const v = resting ? detection.ymax : (detection.ymin + detection.ymax) / 2;
   if (!Number.isFinite(u) || !Number.isFinite(v)) return null;
 
   const { origin, direction, matrix } = rayFromPixel(frame, u, v);
@@ -215,15 +238,41 @@ export function placeDetection(
 
   const tanHalfY = Math.tan(frame.fovY / 2);
   const aspect = frame.width / frame.height;
-  const height = 2 * depth * tanHalfY * Math.abs(detection.ymax - detection.ymin);
-  const width = 2 * depth * tanHalfY * aspect * Math.abs(detection.xmax - detection.xmin);
-  if (!(width > 0.01) || !(height > 0.01)) return null;
+  // Angular extent of the box, converted to metres at the hit distance.
+  const spanV = 2 * depth * tanHalfY * Math.abs(detection.ymax - detection.ymin);
+  const spanH = 2 * depth * tanHalfY * aspect * Math.abs(detection.xmax - detection.xmin);
+  if (!(spanH > 0.01) || !(spanV > 0.01)) return null;
 
-  // Thin by default: almost everything this finds is mounted flat against
-  // whatever it was found on.
-  const thickness = Math.max(0.03, Math.min(width, height) * 0.25);
+  if (resting) {
+    const lying = LIES_FLAT.has(detection.category);
+    // A keyboard's vertical extent in the photo is how far it reaches ACROSS
+    // the desk, not how tall it is. Reading it as height is what stood every
+    // keyboard on its end like a gravestone.
+    const dimensions: [number, number, number] = lying
+      ? [spanH, Math.max(0.02, Math.min(spanH, spanV) * 0.08), spanV]
+      : [spanH, spanV, Math.max(0.03, Math.min(spanH, spanV) * 0.3)];
 
-  // Sit just proud of the surface rather than z-fighting with it.
+    // Built up from the base that the bottom-edge ray just found, so the
+    // object sits ON the surface instead of floating over it.
+    const position = best.point.clone();
+    position.y += dimensions[1] / 2;
+
+    return {
+      category: detection.category,
+      position: [position.x, position.y, position.z],
+      // Line up with whatever it's standing on — a keyboard is square to its
+      // desk. With no host (it's on the floor), face the camera instead,
+      // since a horizontal surface normal gives no usable yaw.
+      rotationY:
+        best.hostRotationY ??
+        Math.atan2(origin.x - position.x, origin.z - position.z),
+      dimensions,
+      confidence: detection.confidence,
+    };
+  }
+
+  // Wall-mounted: flat against the surface it was found on, facing outward.
+  const thickness = Math.max(0.03, Math.min(spanH, spanV) * 0.25);
   const position = best.point.clone().addScaledVector(best.normal, thickness / 2);
 
   return {
@@ -232,7 +281,7 @@ export function placeDetection(
     // Face the way the surface faces. atan2(x, z) is the inverse of the
     // rotateY convention used everywhere else here.
     rotationY: Math.atan2(best.normal.x, best.normal.z),
-    dimensions: [width, height, thickness],
+    dimensions: [spanH, spanV, thickness],
     confidence: detection.confidence,
   };
 }
