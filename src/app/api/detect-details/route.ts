@@ -179,13 +179,22 @@ export async function POST(req: NextRequest) {
           config: { responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA },
         });
         const detections = (JSON.parse(response.text ?? "{}")?.detections ?? []) as Detection2D[];
-        return { frame, detections: detections.filter(isSaneBox) };
-      } catch {
-        // One bad frame shouldn't lose the whole pass.
-        return { frame, detections: [] as Detection2D[] };
+        return { frame, detections: detections.filter(isSaneBox), error: null as string | null };
+      } catch (err) {
+        // One bad frame shouldn't lose the whole pass — but a pass that found
+        // nothing because every request was rejected looks identical to one
+        // that found nothing because the room is bare, so keep the reason.
+        return {
+          frame,
+          detections: [] as Detection2D[],
+          error: err instanceof Error ? err.message : String(err),
+        };
       }
     })
   );
+
+  const failures = perFrame.filter((f) => f.error);
+  const detected = perFrame.reduce((n, f) => n + f.detections.length, 0);
 
   const placed: PlacedObject[] = [];
   for (const { frame, detections } of perFrame) {
@@ -195,20 +204,37 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Snap last, after clustering has settled each item's final position —
-  // averaging across frames would otherwise lift a snapped item back off its
-  // surface by a centimetre or two.
+  // Snapped twice, deliberately. Once here so that the same monitor seen from
+  // several angles lands on the same desktop every time — without it, one
+  // frame's estimate can sit on the desk and another's on the wall behind,
+  // far enough apart that clustering treats them as two different objects and
+  // then discards both for being seen only once. Then again after merging,
+  // because averaging positions lifts an item back off the surface.
   const merged = snapToSupports(
-    rejectDuplicates(mergeDetections(placed), layout.objects),
+    rejectDuplicates(mergeDetections(snapToSupports(placed, layout)), layout.objects),
     layout
   );
+
+  // Counts at every stage, because "0 items" has several very different
+  // causes and they're indistinguishable from the result alone.
+  const stats = {
+    analyzed: chosen.length,
+    failed: failures.length,
+    detected,
+    placed: placed.length,
+  };
 
   if (merged.length === 0) {
     return NextResponse.json({
       added: 0,
-      analyzed: chosen.length,
-      raw: placed.length,
-      note: "Nothing new survived merging — either none were visible or none were seen twice.",
+      ...stats,
+      note: failures.length === chosen.length
+        ? `Every frame's request failed — first error: ${failures[0]?.error ?? "unknown"}`
+        : detected === 0
+          ? "The model reported nothing from these frames."
+          : placed.length === 0
+            ? "Detections were found but none could be placed against the room's geometry."
+            : "Found and placed, but nothing was seen in two frames, so all were discarded as noise.",
     });
   }
 
@@ -244,8 +270,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     added: additions.length,
-    analyzed: chosen.length,
-    raw: placed.length,
+    ...stats,
     categories: additions.map((a) => a.category),
   });
 }
