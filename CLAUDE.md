@@ -1,6 +1,36 @@
 @AGENTS.md
 ## UI/UX & Aesthetic Guidelines: Pinterest-Style Social Layer
 
+> **Status: target direction, not yet implemented.** The social layer today
+> ships a cool drafting palette (the `.plans` block at the bottom of
+> `globals.css`), a fixed square grid, and no animation library. Nothing
+> below is built. Treat this as the brief for a future restyle, not a
+> description of the code — and do not assume a card, colour or class named
+> here exists.
+>
+> Four notes from design review. Where they conflict with the text below,
+> follow these:
+>
+> 1. **Masonry needs varied heights before it is worth anything.** Every
+>    thumbnail is currently a square floor-plan SVG, so `columns-*` would
+>    produce a worse-aligned grid than the fixed one it replaces, plus a tab
+>    order that runs down each column. Render plans at each room's true
+>    aspect ratio first — a 3.8 × 6.2 m dorm becomes portrait, a wide living
+>    room lands landscape — and the variation comes from real measurements
+>    rather than being faked.
+> 2. **Keep area on the card.** "Metadata restricted to author handle, room
+>    type badge and stamp count" strips the measured dimensions, which are
+>    the only reason this is not Pinterest. Area stays as an overlay badge;
+>    footprint and object count move to the post page.
+> 3. **Skip `framer-motion`.** Staggered fade-ins are `animation-delay` in
+>    CSS at zero bundle cost. `lucide-react` is fine, it tree-shakes.
+> 4. **Unresolved: the palette.** Warm cream plus terracotta plus a
+>    Playfair/Cormorant serif is the single most common AI-generated look
+>    right now, and terracotta is itself a furniture colour, so it competes
+>    with the content it frames. The warm-neutral base is right. Whether the
+>    accent stays terracotta is the project owner's call and has not been
+>    made.
+
 Adhere strictly to these design system principles, tokens, and visual standards for all UI components in the social layer (`src/app/feed/`, `src/app/p/`, `src/app/share/`, and `src/components/social/`). The design language must feel like a modern, visual-first interior design editorial (e.g., *Architectural Digest*, *Are.na*, *Kinfolk*, or *Pinterest*), prioritizing imagery, spatial breathing room, and warm minimalism over dense dashboard widgets.
 
 ---
