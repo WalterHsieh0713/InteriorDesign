@@ -1,26 +1,28 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { normalizeLayout } from "@/lib/normalizeLayout";
+import {
+  isRoomSort,
+  sortSessions,
+  summarizeRoom,
+  type SessionSummary,
+} from "@/lib/sessionSummary";
 
-export type SessionSummary = {
-  sessionId: string;
-  width: number;
-  length: number;
-  height: number;
-  areaM2: number;
-  objectCount: number;
-  /** True when the scan carried ARKit camera poses, so the room renders real photographed surfaces. */
-  hasPhotos: boolean;
-  updatedAt: string | null;
-};
+// Re-exported so existing importers keep working; the type lives in the lib
+// now, alongside the one function that builds it.
+export type { SessionSummary };
 
 /**
  * Every room that has been scanned.
  *
  * Without this there is no way into the editor except knowing a session UUID by
  * heart: rooms existed in the database but nothing in the app could reach them.
+ *
+ *   GET /api/sessions?sort=recent|budget
  */
-export async function GET() {
+export async function GET(req: Request) {
+  const sortParam = new URL(req.url).searchParams.get("sort") ?? undefined;
+  const sort = isRoomSort(sortParam) ? sortParam : "recent";
+
   const { data, error } = await supabaseAdmin()
     .from("rooms")
     .select("session_id, layout, updated_at")
@@ -31,24 +33,13 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const sessions: SessionSummary[] = [];
-  for (const row of data ?? []) {
-    // A room that cannot be parsed cannot be opened either, so leaving it out
-    // of the list is honest rather than offering a link that lands on an error.
-    const parsed = normalizeLayout(row.layout);
-    if (!parsed.ok) continue;
-    const { room, objects, cameraFrames } = parsed.layout;
-    sessions.push({
-      sessionId: row.session_id,
-      width: room.width,
-      length: room.length,
-      height: room.height,
-      areaM2: +(room.width * room.length).toFixed(1),
-      objectCount: objects.length,
-      hasPhotos: (cameraFrames?.length ?? 0) > 0,
-      updatedAt: row.updated_at ?? null,
-    });
-  }
+  // Sorted in TypeScript rather than SQL: cost comes from walking each
+  // layout's bindings through the shopping list, which Postgres cannot do
+  // without reaching into jsonb. At 60 rows that is not a tradeoff worth
+  // thinking about.
+  const sessions = (data ?? [])
+    .map(summarizeRoom)
+    .filter((s): s is SessionSummary => s !== null);
 
-  return NextResponse.json({ sessions });
+  return NextResponse.json({ sessions: sortSessions(sessions, sort), sort });
 }

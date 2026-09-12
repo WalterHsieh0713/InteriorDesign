@@ -1,8 +1,14 @@
 import Link from "next/link";
-import type { SessionSummary } from "../api/sessions/route";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { normalizeLayout } from "@/lib/normalizeLayout";
 import { RoomCardFooter } from "@/components/RoomCardFooter";
+import {
+  formatCost,
+  isRoomSort,
+  sortSessions,
+  summarizeRoom,
+  type RoomSort,
+  type SessionSummary,
+} from "@/lib/sessionSummary";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +34,8 @@ async function loadSessions(): Promise<SessionSummary[]> {
   // Queried directly rather than fetching this app's own /api/sessions. A
   // server component has no origin to fetch from, so a self-fetch has to guess
   // its own URL — and guesses wrong on any port or preview domain it was not
-  // told about. /api/sessions still exists for clients that need it.
+  // told about. /api/sessions still exists for clients that need it, and both
+  // build their rows with the same summarizeRoom.
   const { data, error } = await supabaseAdmin()
     .from("rooms")
     .select("session_id, layout, updated_at")
@@ -37,25 +44,7 @@ async function loadSessions(): Promise<SessionSummary[]> {
 
   if (error || !data) return [];
 
-  const out: SessionSummary[] = [];
-  for (const row of data) {
-    // A room that cannot be parsed cannot be opened either, so leaving it out
-    // is honest rather than offering a link that lands on an error.
-    const parsed = normalizeLayout(row.layout);
-    if (!parsed.ok) continue;
-    const { room, objects, cameraFrames } = parsed.layout;
-    out.push({
-      sessionId: row.session_id,
-      width: room.width,
-      length: room.length,
-      height: room.height,
-      areaM2: +(room.width * room.length).toFixed(1),
-      objectCount: objects.length,
-      hasPhotos: (cameraFrames?.length ?? 0) > 0,
-      updatedAt: row.updated_at ?? null,
-    });
-  }
-  return out;
+  return data.map(summarizeRoom).filter((s): s is SessionSummary => s !== null);
 }
 
 function timeAgo(iso: string | null): string {
@@ -71,8 +60,20 @@ function timeAgo(iso: string | null): string {
 const navLink =
   "rounded-full px-3.5 py-2 text-sm text-[var(--fg-2)] transition-colors hover:bg-[var(--line-soft)] hover:text-[var(--fg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--amber)]";
 
-export default async function RoomsPage() {
-  const [sessions, published] = await Promise.all([loadSessions(), loadPublished()]);
+const SORT_LABELS: Record<RoomSort, string> = {
+  recent: "Recent",
+  budget: "Budget",
+};
+
+export default async function RoomsPage({ searchParams }: PageProps<"/rooms">) {
+  const { sort: sortParam } = await searchParams;
+  const sort: RoomSort = isRoomSort(typeof sortParam === "string" ? sortParam : undefined)
+    ? (sortParam as RoomSort)
+    : "recent";
+
+  const [loaded, published] = await Promise.all([loadSessions(), loadPublished()]);
+  const sessions = sortSessions(loaded, sort);
+  const untouched = sessions.filter((s) => !s.touched).length;
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
@@ -120,11 +121,47 @@ export default async function RoomsPage() {
             </p>
           </div>
           {sessions.length > 0 && (
-            <p className="tb text-[12px] uppercase tracking-[0.18em] text-[var(--fg-3)]">
-              {sessions.length} {sessions.length === 1 ? "room" : "rooms"}
-            </p>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+              <p className="tb text-[12px] uppercase tracking-[0.18em] text-[var(--fg-3)]">
+                {sessions.length} {sessions.length === 1 ? "room" : "rooms"}
+              </p>
+              {/* Plain links, not a client control: the sort lives in the URL,
+                  so a sorted list is a shareable link and the page stays a
+                  server component with no JavaScript behind the switch. */}
+              <nav
+                aria-label="Sort rooms"
+                className="flex items-center gap-1 rounded-full border border-[var(--line)] p-1"
+              >
+                {(Object.keys(SORT_LABELS) as RoomSort[]).map((id) => {
+                  const active = id === sort;
+                  return (
+                    <Link
+                      key={id}
+                      href={id === "recent" ? "/rooms" : `/rooms?sort=${id}`}
+                      scroll={false}
+                      aria-current={active ? "true" : undefined}
+                      className={`tb rounded-full px-3.5 py-1.5 text-[11px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--amber)] ${
+                        active
+                          ? "bg-[var(--amber)] text-[var(--on-amber)]"
+                          : "text-[var(--fg-2)] hover:text-[var(--fg)]"
+                      }`}
+                    >
+                      {SORT_LABELS[id]}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
           )}
         </header>
+
+        {untouched > 0 && sessions.length > 0 && (
+          <p className="tb -mt-4 mb-8 text-[11px] leading-relaxed text-[var(--fg-2)]">
+            {untouched} {untouched === 1 ? "room has" : "rooms have"} nothing placed in
+            {untouched === 1 ? " it" : " them"} yet, so
+            {untouched === 1 ? " it sits" : " they sit"} at the end of the list.
+          </p>
+        )}
 
         {sessions.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-[var(--line)] px-6 py-20 text-center">
@@ -188,6 +225,17 @@ export default async function RoomsPage() {
                       reason. */}
                   <p className="tb mt-2.5 text-[12px] leading-relaxed text-[var(--fg-2)]">
                     {s.areaM2} m² · {s.height.toFixed(1)} m ceiling · {s.objectCount} objects
+                  </p>
+                  {/* What was put in the room, which is what "budget" sorts on.
+                      An untouched room says so rather than showing $0 — zero
+                      would read as "free", when the truth is nobody has
+                      furnished it. */}
+                  <p className="tb mt-auto pt-4 text-[12px]">
+                    {s.touched ? (
+                      <span className="text-[var(--amber)]">{formatCost(s.costCents)}</span>
+                    ) : (
+                      <span className="text-[var(--fg-2)]">Not furnished</span>
+                    )}
                   </p>
                 </Link>
                 <RoomCardFooter
