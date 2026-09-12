@@ -6,7 +6,7 @@ import { OrbitControls, Html, Environment } from "@react-three/drei";
 import * as THREE from "three";
 import type { ItemBinding, RoomLayout } from "@/lib/roomLayoutSchema";
 import { CATALOG_BY_ID, formatPrice } from "@/lib/catalog";
-import { modelUrlFor, toBinding, toDimensions, type CatalogItem } from "@/lib/catalogItem";
+import { meshForItem, toBinding, toDimensions, type CatalogItem } from "@/lib/catalogItem";
 import { clampToRoom, initialPlacement, mountOf, snapFloorNearWall, snapToWall, supportHeightAt } from "@/lib/placement";
 import { availablePresets, rollFor, runLength, segmentsFor, type LedPreset, type LedPresetId } from "@/lib/ledPresets";
 import { projectionFor } from "@/lib/projection";
@@ -329,7 +329,9 @@ function DraggableObject({
   // keeps the procedural shape, which is still the right answer for the user's
   // own scanned furniture and for any product with no model paired to it.
   const item = obj.binding.source === "catalog" ? CATALOG_BY_ID.get(obj.binding.catalogItemId) : undefined;
-  const productModelUrl = item ? modelUrlFor(item) : null;
+  // IKEA's own asset when there is one — the real product, already to scale.
+  // Otherwise an ABO stand-in, which gets stretched to fit.
+  const mesh = item ? meshForItem(item) : null;
   // "poster:comic:a2" — the artwork is drawn, not downloaded, so it is chosen
   // here rather than looked up in the catalog.
   const posterArt = obj.preset?.startsWith("poster:")
@@ -362,7 +364,7 @@ function DraggableObject({
         />
       ) : posterArt ? (
         <PosterMesh art={posterArt} dimensions={obj.dimensions} selected={isSelected} />
-      ) : productModelUrl && item ? (
+      ) : mesh && item ? (
         <Suspense
           fallback={
             <FurnitureMesh
@@ -377,7 +379,8 @@ function DraggableObject({
           }
         >
           <ProductMesh
-            modelUrl={productModelUrl}
+            modelUrl={mesh.url}
+            exact={mesh.exact}
             dimensions={obj.dimensions}
             mount={item.mount}
             opacity={isDragging ? 0.6 : 1}

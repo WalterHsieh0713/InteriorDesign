@@ -209,6 +209,43 @@ characters, because this app publishes rooms to a public feed.
 
 ---
 
+## Where the 3D models come from
+
+Two sources, in priority order.
+
+**1. IKEA's own glTF — 28 of 38 IKEA products.** IKEA ships these to power the
+"View in 3D" button; they are the exact assets behind its AR app, so they are
+the product, at the product's real size. A MICKE desk measures
+`1.050 × 0.754 × 0.501` against a product page stating `1.051 × 0.749 × 0.498`.
+They are already Draco-compressed and a fraction of the size of a stand-in.
+
+`scripts/fetch-ikea-models.mjs` records their **URLs**; it does not download
+geometry. `/api/ikea-model?id=<catalog id>` fetches the bytes server-side at
+request time. Two reasons it has to work that way:
+
+- `web-api.ikea.com` returns **403 to any request carrying an `Origin` header**,
+  so a browser cannot load these cross-origin however permissive the
+  `Access-Control-Allow-Origin: *` on the response looks.
+- **No IKEA asset ends up in this repository.** This repo is public and the app
+  is publicly deployed, so committing IKEA's models would be redistributing
+  someone else's copyrighted work, which is a different thing from a browser
+  loading them to display a product. Proxying keeps us on the right side of
+  that line. The route takes a catalog **id**, never a URL, so it cannot be
+  pointed at an arbitrary host.
+
+**2. Amazon Berkeley Objects stand-ins — everything else.** CC BY 4.0, and
+*not* the product they sit beside, so they are stretched to the product's real
+footprint and the UI says "representative model". This is the path that made a
+swivel chair render as a plain chair; it is now the fallback rather than the
+default.
+
+Anything with neither renders as a procedural `FurnitureMesh` shape.
+
+**Re-run `fetch-ikea-models.mjs` if a product stops rendering** — the URLs carry
+a content hash and change when IKEA updates a model.
+
+---
+
 ## Still open
 
 1. **Three catalog items still carry one estimated axis** (above).
@@ -323,3 +360,35 @@ for the scanner. Every payload in it is executed against the real schema.
 loads with every binding present and no invalid categories, and a moved chair
 round-trips through PUT and back with the frames intact. `npx next build`,
 TypeScript and lint all pass, bar the pre-existing error noted above.
+
+### v3 — 2026-09-12 — the real IKEA models
+
+The stand-in approach had a visible failure: pick a swivel chair from the
+catalog and a plain chair appears in the room, because the mesh was never that
+product — it was whichever Amazon Berkeley Objects chair had the closest
+proportions, stretched to fit.
+
+IKEA publishes its own glTF for most products, behind the "View in 3D" button.
+Verified on MICKE: `1.050 × 0.754 × 0.501` against a product page stating
+`1.051 × 0.749 × 0.498` — within 7mm on every axis, correct axis order, already
+Draco-compressed, and smaller than the stand-in it replaces. **28 of 38 IKEA
+products have one.**
+
+These are used **unscaled**. The mesh is the product; our recorded dimensions
+are a transcription of the same thing, so rescaling could only ever make it less
+accurate. Stretching now applies only to the ABO stand-ins that genuinely are
+not the product.
+
+Nothing is downloaded into the repo. `fetch-ikea-models.mjs` records URLs and
+`/api/ikea-model` proxies the bytes, which is necessary anyway —
+`web-api.ikea.com` 403s any request with an `Origin` header — and avoids
+redistributing IKEA's assets from a public repo. The route takes a catalog id,
+not a URL, so it is not an open proxy.
+
+The 10 IKEA products with no published model, plus both Amazon accessories, keep
+their stand-ins or procedural shapes.
+
+**One thing to be clear about:** these are IKEA's copyrighted assets. Proxying
+them the way a browser would is a reasonable footing for a hackathon demo, and
+materially better than committing copies. It is not a licence. Anything beyond
+a demo needs IKEA's permission.

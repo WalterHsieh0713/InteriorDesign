@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { OBJECT_CATEGORIES, type ItemBinding } from "./roomLayoutSchema";
 import { MODELS_BY_ID, type ModelMount } from "./models.generated";
+import { IKEA_MODEL_URLS } from "./ikeaModels.generated";
 
 // A catalog item is a *real, buyable product*. That is the whole contract:
 // if it has no working link and no current price, it does not belong here.
@@ -63,8 +64,27 @@ export function toBinding(item: CatalogItem): ItemBinding {
   };
 }
 
+/**
+ * The mesh to render for a product, and whether it is already the right size.
+ *
+ * IKEA publishes its own glTF for most products — the exact asset behind the
+ * "View in 3D" button, physically correct to the millimetre. When one exists it
+ * wins outright, and must NOT be rescaled: it already *is* the product. Only
+ * the Amazon Berkeley Objects stand-ins get stretched to a size they were never
+ * built at, which is why a swivel chair used to turn up as a plain chair.
+ */
+export function meshForItem(item: CatalogItem): { url: string; exact: boolean } | null {
+  if (IKEA_MODEL_URLS[item.id]) {
+    // Served through our own route: web-api.ikea.com rejects any request
+    // carrying a browser Origin header, so this cannot be loaded directly.
+    return { url: `/api/ikea-model?id=${encodeURIComponent(item.id)}`, exact: true };
+  }
+  const standIn = item.modelId ? MODELS_BY_ID.get(item.modelId)?.modelUrl : null;
+  return standIn ? { url: standIn, exact: false } : null;
+}
+
 export function modelUrlFor(item: CatalogItem): string | null {
-  return item.modelId ? (MODELS_BY_ID.get(item.modelId)?.modelUrl ?? null) : null;
+  return meshForItem(item)?.url ?? null;
 }
 
 export function modelMountFor(item: CatalogItem): ModelMount {

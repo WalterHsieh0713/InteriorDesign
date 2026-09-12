@@ -15,6 +15,8 @@ type Props = {
   /** The real product's [width, height, depth] in metres. */
   dimensions: [number, number, number];
   mount: ModelMount;
+  /** True when the mesh is the real product at its real size and must not be rescaled. */
+  exact?: boolean;
   opacity?: number;
   selected?: boolean;
 };
@@ -30,7 +32,7 @@ type Props = {
  * actually fits against that wall, and a 10% stretch is invisible next to a
  * 15cm lie about how much floor something eats.
  */
-export default function ProductMesh({ modelUrl, dimensions, mount, opacity = 1, selected = false }: Props) {
+export default function ProductMesh({ modelUrl, dimensions, mount, exact = false, opacity = 1, selected = false }: Props) {
   const { scene } = useGLTF(modelUrl);
 
   const prepared = useMemo(() => {
@@ -58,11 +60,18 @@ export default function ProductMesh({ modelUrl, dimensions, mount, opacity = 1, 
     // Guard against a degenerate axis (flat wall art has near-zero depth):
     // dividing by it produces Infinity and the object vanishes from the scene.
     const safe = (n: number) => (n > 1e-4 ? n : 1e-4);
-    inner.scale.set(
-      dimensions[0] / safe(size.x),
-      dimensions[1] / safe(size.y),
-      dimensions[2] / safe(size.z)
-    );
+    if (exact) {
+      // IKEA's own asset is the product, at the product's real size. Rescaling
+      // it to our recorded dimensions could only ever make it less accurate —
+      // our numbers are a transcription, this mesh is the source.
+      inner.scale.setScalar(1);
+    } else {
+      inner.scale.set(
+        dimensions[0] / safe(size.x),
+        dimensions[1] / safe(size.y),
+        dimensions[2] / safe(size.z)
+      );
+    }
     root.position.sub(centre);
     wrapper.add(inner);
 
@@ -95,7 +104,7 @@ export default function ProductMesh({ modelUrl, dimensions, mount, opacity = 1, 
     });
 
     return wrapper;
-  }, [scene, dimensions, mount, opacity, selected]);
+  }, [scene, dimensions, mount, exact, opacity, selected]);
 
   return <primitive object={prepared} />;
 }
