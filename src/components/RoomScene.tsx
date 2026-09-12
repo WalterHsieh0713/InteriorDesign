@@ -7,7 +7,13 @@ import * as THREE from "three";
 import { FIXED_CATEGORIES, type RoomLayout } from "@/lib/roomLayoutSchema";
 import FurnitureMesh from "./FurnitureMesh";
 import { getTexture, getContactShadowTexture, type TextureKind } from "./textures";
-import { prepareCameras, bakePlaneTexture, rotateY, type PreparedCamera } from "./projectiveTexture";
+import {
+  prepareCameras,
+  bakePlaneTexture,
+  prepareOccluders,
+  rotateY,
+  type PreparedCamera,
+} from "./projectiveTexture";
 
 // Plausible real-furniture tones, used only when we have no sampled color
 // for an object. The previous palette was a categorical data-viz set — lime
@@ -158,10 +164,12 @@ function Floor({
   room,
   walls,
   cameras,
+  occluders,
 }: {
   room: RoomLayout["room"];
   walls: RoomLayout["walls"];
   cameras: PreparedCamera[];
+  occluders: ReturnType<typeof prepareOccluders>;
 }) {
   const { width, length } = room;
   const floorColor = room.floorColor ?? "#9c968d";
@@ -186,9 +194,10 @@ function Floor({
           fallbackColor: floorColor,
           resolution: 192,
         },
-        cameras
+        cameras,
+        occluders
       ),
-    [cameras, width, length, floorColor]
+    [cameras, occluders,width, length, floorColor]
   );
 
   // Shape space maps to the floor as (a, b) -> world (a, 0, -b), which is what
@@ -255,10 +264,12 @@ function MeasuredWalls({
   walls,
   wallColor,
   cameras,
+  occluders,
 }: {
   walls: NonNullable<RoomLayout["walls"]>;
   wallColor: string;
   cameras: PreparedCamera[];
+  occluders: ReturnType<typeof prepareOccluders>;
 }) {
   const wallMap = useMemo(() => getTexture("plaster", 6), []);
 
@@ -288,11 +299,12 @@ function MeasuredWalls({
               fallbackColor: wallColor,
               resolution: 192,
             },
-            cameras
+            cameras,
+            occluders
           ),
         };
       }),
-    [walls, wallColor, cameras]
+    [walls, wallColor, cameras, occluders]
   );
 
   return (
@@ -328,7 +340,15 @@ function MeasuredWalls({
   );
 }
 
-function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedCamera[] }) {
+function Walls({
+  room,
+  cameras,
+  occluders,
+}: {
+  room: RoomLayout["room"];
+  cameras: PreparedCamera[];
+  occluders: ReturnType<typeof prepareOccluders>;
+}) {
   const { width, length, height } = room;
   const wallColor = room.wallColor ?? "#d8d4cd";
   const wallMap = useMemo(() => getTexture("plaster", 6), []);
@@ -343,9 +363,10 @@ function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedC
           fallbackColor: wallColor,
           resolution: 192,
         },
-        cameras
+        cameras,
+        occluders
       ),
-    [cameras, width, height, length, wallColor]
+    [cameras, occluders,width, height, length, wallColor]
   );
   const frontWallPhoto = useMemo(
     () =>
@@ -358,9 +379,10 @@ function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedC
           fallbackColor: wallColor,
           resolution: 192,
         },
-        cameras
+        cameras,
+        occluders
       ),
-    [cameras, width, height, length, wallColor]
+    [cameras, occluders,width, height, length, wallColor]
   );
   const rightWallPhoto = useMemo(
     () =>
@@ -373,9 +395,10 @@ function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedC
           fallbackColor: wallColor,
           resolution: 192,
         },
-        cameras
+        cameras,
+        occluders
       ),
-    [cameras, width, height, length, wallColor]
+    [cameras, occluders,width, height, length, wallColor]
   );
   const leftWallPhoto = useMemo(
     () =>
@@ -388,9 +411,10 @@ function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedC
           fallbackColor: wallColor,
           resolution: 192,
         },
-        cameras
+        cameras,
+        occluders
       ),
-    [cameras, width, height, length, wallColor]
+    [cameras, occluders,width, height, length, wallColor]
   );
 
   // A flat guessed wall color stays translucent so you can still see inside
@@ -445,6 +469,7 @@ function DraggableObject({
   onDragStart,
   onSelect,
   cameras,
+  occluders,
 }: {
   obj: RoomLayout["objects"][number];
   isDragging: boolean;
@@ -452,6 +477,7 @@ function DraggableObject({
   onDragStart: (id: string, y: number) => void;
   onSelect: (id: string) => void;
   cameras: PreparedCamera[];
+  occluders: ReturnType<typeof prepareOccluders>;
 }) {
   const [w, h, d] = obj.dimensions;
   // The object's own sampled color when we have one — that's what makes a
@@ -490,6 +516,7 @@ function DraggableObject({
         color={color}
         opacity={isDragging ? 0.6 : 1}
         cameras={cameras}
+        occluders={occluders}
         objectPosition={obj.position}
         objectRotationY={obj.rotationY}
       />
@@ -605,6 +632,22 @@ function Scene({
       fromWindow: true,
     };
   }, [layout.room, layout.objects]);
+
+  // Everything solid enough to stand between a camera and a surface. Built
+  // from the layout rather than the live dragged copy on purpose: the bake
+  // represents where things were when the room was photographed, so dragging
+  // a chair later must not silently re-bake every wall behind it.
+  const occluders = useMemo(
+    () =>
+      prepareOccluders(
+        layout.objects.map((o) => ({
+          position: o.position,
+          rotationY: o.rotationY,
+          dimensions: o.dimensions,
+        }))
+      ),
+    [layout.objects]
+  );
 
   // Rotation is applied to `layout` by the parent rather than here, and flows
   // back down through this sync — so there's exactly one path for "an object
@@ -724,15 +767,16 @@ function Scene({
       >
         <planeGeometry args={[layout.room.width * 4, layout.room.length * 4]} />
       </mesh>
-      <Floor room={layout.room} walls={layout.walls} cameras={cameras} />
+      <Floor room={layout.room} walls={layout.walls} cameras={cameras} occluders={occluders} />
       {layout.walls?.length ? (
         <MeasuredWalls
           walls={layout.walls}
           wallColor={layout.room.wallColor ?? "#d8d4cd"}
           cameras={cameras}
+          occluders={occluders}
         />
       ) : (
-        <Walls room={layout.room} cameras={cameras} />
+        <Walls room={layout.room} cameras={cameras} occluders={occluders} />
       )}
       {objects.map((obj) => (
         <DraggableObject
@@ -743,6 +787,7 @@ function Scene({
           onDragStart={handleDragStart}
           onSelect={onSelect}
           cameras={cameras}
+          occluders={occluders}
         />
       ))}
       <OrbitControls enabled={!draggingId} makeDefault />

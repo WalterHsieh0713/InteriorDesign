@@ -126,6 +126,125 @@ export type PlaneTarget = {
   resolution?: number;
 };
 
+/** A box that can stand between a camera and the surface being baked. */
+export type Occluder = {
+  position: [number, number, number];
+  rotationY: number;
+  dimensions: [number, number, number];
+};
+
+type PreparedOccluder = {
+  center: THREE.Vector3;
+  half: [number, number, number];
+  cos: number;
+  sin: number;
+  /** Bounding-sphere radius, for the cheap reject before the real test. */
+  radius: number;
+};
+
+/** Precomputes the per-occluder constants so the inner loop, which runs
+ * millions of times per bake, does arithmetic instead of allocation. */
+export function prepareOccluders(occluders: Occluder[]): PreparedOccluder[] {
+  return occluders
+    // Anything paper-thin (a rug) blocks nothing worth blocking, and testing
+    // it costs the same as testing a wardrobe.
+    .filter((o) => Math.max(...o.dimensions) > 0.25)
+    .map((o) => {
+      const half: [number, number, number] = [
+        Math.max(o.dimensions[0], 0.01) / 2,
+        Math.max(o.dimensions[1], 0.01) / 2,
+        Math.max(o.dimensions[2], 0.01) / 2,
+      ];
+      return {
+        center: new THREE.Vector3(...o.position),
+        half,
+        cos: Math.cos(-o.rotationY),
+        sin: Math.sin(-o.rotationY),
+        radius: Math.hypot(half[0], half[1], half[2]),
+      };
+    });
+}
+
+/**
+ * Is the straight line from a point on the surface to the camera blocked?
+ *
+ * This is the whole fix for smeared textures: without it a camera pointed at
+ * a table still counts as "seeing" the floor behind the table, and paints the
+ * table's pixels onto that floor. Every streak of furniture-coloured haze
+ * across a floor or wall is one of these unblocked projections.
+ */
+function isOccluded(
+  point: THREE.Vector3,
+  cameraPosition: THREE.Vector3,
+  occluders: PreparedOccluder[]
+): boolean {
+  const dx = cameraPosition.x - point.x;
+  const dy = cameraPosition.y - point.y;
+  const dz = cameraPosition.z - point.z;
+  const segmentLength = Math.hypot(dx, dy, dz);
+  if (segmentLength < 1e-4) return false;
+
+  for (const occluder of occluders) {
+    // Cheap reject first: how far is the box's centre from this line? Nearly
+    // every occluder in a room fails here, which is what keeps the exact test
+    // below affordable.
+    const toCenterX = occluder.center.x - point.x;
+    const toCenterY = occluder.center.y - point.y;
+    const toCenterZ = occluder.center.z - point.z;
+    const along = (toCenterX * dx + toCenterY * dy + toCenterZ * dz) / segmentLength;
+    if (along < -occluder.radius || along > segmentLength + occluder.radius) continue;
+    const perpendicular = Math.sqrt(
+      Math.max(
+        0,
+        toCenterX * toCenterX + toCenterY * toCenterY + toCenterZ * toCenterZ - along * along
+      )
+    );
+    if (perpendicular > occluder.radius) continue;
+
+    // Exact slab test, in the box's own rotated frame.
+    const lx = toCenterX * -1;
+    const lz = toCenterZ * -1;
+    const ox = lx * occluder.cos + lz * occluder.sin;
+    const oz = -lx * occluder.sin + lz * occluder.cos;
+    const oy = -toCenterY;
+    const rx = dx * occluder.cos + dz * occluder.sin;
+    const rz = -dx * occluder.sin + dz * occluder.cos;
+    const ray = [rx, dy, rz];
+    const origin = [ox, oy, oz];
+
+    let near = 0;
+    let far = 1;
+    let blocked = true;
+    for (let axis = 0; axis < 3; axis++) {
+      const o = origin[axis];
+      const r = ray[axis];
+      const h = occluder.half[axis];
+      if (Math.abs(r) < 1e-9) {
+        if (Math.abs(o) > h) {
+          blocked = false;
+          break;
+        }
+        continue;
+      }
+      let t1 = (-h - o) / r;
+      let t2 = (h - o) / r;
+      if (t1 > t2) [t1, t2] = [t2, t1];
+      near = Math.max(near, t1);
+      far = Math.min(far, t2);
+      if (near > far) {
+        blocked = false;
+        break;
+      }
+    }
+
+    // Ignore a hit right at the surface itself — every texel technically
+    // starts on the object it belongs to.
+    if (blocked && far > 0.002 && near < 0.998) return true;
+  }
+
+  return false;
+}
+
 /**
  * Bakes a flat rectangle (a wall, the floor, or one furniture face) into a
  * canvas texture by projecting it into whichever nearby cameras actually
@@ -135,7 +254,11 @@ export type PlaneTarget = {
  * Returns null (never a broken/black texture) if there are no usable
  * cameras — callers should keep whatever they render today in that case.
  */
-export function bakePlaneTexture(target: PlaneTarget, cameras: PreparedCamera[]): THREE.CanvasTexture | null {
+export function bakePlaneTexture(
+  target: PlaneTarget,
+  cameras: PreparedCamera[],
+  occluders: PreparedOccluder[] = []
+): THREE.CanvasTexture | null {
   if (cameras.length === 0) return null;
 
   const resolution = target.resolution ?? 128;
@@ -184,10 +307,19 @@ export function bakePlaneTexture(target: PlaneTarget, cameras: PreparedCamera[])
         const facing = target.normal.dot(toCamera);
         if (facing <= 0.05) continue;
 
+        // The camera may face this point and still not see it, because
+        // something is standing in between. Checked last of the cheap tests
+        // because it's the expensive one.
+        if (occluders.length > 0 && isOccluded(worldPos, camera.position, occluders)) continue;
+
         // Fades toward the edge of what the camera saw so overlapping
         // photos blend instead of showing a hard seam.
         const edgeFeather = (1 - Math.abs(ndcX)) * (1 - Math.abs(ndcY));
-        const weight = facing * edgeFeather;
+        // Cubed rather than linear: a straight-on view should dominate a
+        // grazing one rather than being averaged with it. Flat weighting
+        // blends six disagreeing views into mush even when none of them is
+        // occluded, which is the other half of the smearing.
+        const weight = facing * facing * facing * edgeFeather;
         const imgU = ndcX * 0.5 + 0.5;
         const imgV = 1 - (ndcY * 0.5 + 0.5);
         const pixel = samplePixel(camera, imgU, imgV);

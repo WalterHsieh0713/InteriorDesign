@@ -1,7 +1,12 @@
 import { createContext, useContext, useMemo } from "react";
 import * as THREE from "three";
 import { CATEGORY_TEXTURE, getTexture } from "./textures";
-import { bakePlaneTexture, rotateY, type PreparedCamera } from "./projectiveTexture";
+import {
+  bakePlaneTexture,
+  prepareOccluders,
+  rotateY,
+  type PreparedCamera,
+} from "./projectiveTexture";
 
 type Props = {
   category: string;
@@ -11,6 +16,9 @@ type Props = {
   /** Captured camera frames for this session, empty on the Gemini-photo web
    * path (no per-photo camera pose) — see projectiveTexture.ts. */
   cameras: PreparedCamera[];
+  /** Everything that can stand between a camera and this object's face. A
+   * chair pushed under a desk otherwise paints itself onto the desktop. */
+  occluders: ReturnType<typeof prepareOccluders>;
   objectPosition: [number, number, number];
   objectRotationY: number;
 };
@@ -161,7 +169,7 @@ function faceGeometryFor(
 }
 
 function useFacePhotoTexture(props: Props): THREE.CanvasTexture | null {
-  const { category, dimensions, color, cameras, objectPosition, objectRotationY } = props;
+  const { category, dimensions, color, cameras, occluders, objectPosition, objectRotationY } = props;
   const [ox, oy, oz] = objectPosition;
   const [w, h, d] = dimensions;
   return useMemo(() => {
@@ -178,8 +186,12 @@ function useFacePhotoTexture(props: Props): THREE.CanvasTexture | null {
         : new THREE.Vector3(0, face.faceH, 0);
     const normal = rotateY(face.normal, objectRotationY);
 
-    return bakePlaneTexture({ center, xAxis, yAxis, normal, fallbackColor: color, resolution: 96 }, cameras);
-  }, [category, w, h, d, color, cameras, ox, oy, oz, objectRotationY]);
+    return bakePlaneTexture(
+      { center, xAxis, yAxis, normal, fallbackColor: color, resolution: 96 },
+      cameras,
+      occluders
+    );
+  }, [category, w, h, d, color, cameras, occluders, ox, oy, oz, objectRotationY]);
 }
 
 export default function FurnitureMesh(props: Props) {
