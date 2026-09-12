@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Post } from "@/lib/postMetadata";
-import { ROOM_TYPES, STYLE_SUGGESTIONS } from "@/lib/postMetadata";
 import {
   getDeviceId,
   getLikedServerSnapshot,
@@ -12,23 +11,19 @@ import {
   subscribeLiked,
 } from "@/lib/device";
 import { PostCard } from "./PostCard";
+import { AREA_BANDS, FilterPanel } from "./FilterPanel";
 
+// Today and This week were dropped: at this volume their windows held too
+// few plans to rank meaningfully, and three fuller tabs read better than
+// five sparse ones. /api/feed still accepts them, so an old link keeps
+// working.
 const TABS = [
   { id: "foryou", label: "For you" },
-  { id: "today", label: "Today" },
-  { id: "week", label: "This week" },
   { id: "month", label: "This month" },
   { id: "all", label: "All time" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
-
-const AREA_BANDS = [
-  { id: "s", label: "Under 20 m²", min: undefined, max: 20 },
-  { id: "m", label: "20–50 m²", min: 20, max: 50 },
-  { id: "l", label: "50–80 m²", min: 50, max: 80 },
-  { id: "xl", label: "Over 80 m²", min: 80, max: undefined },
-] as const;
 
 type FeedResponse = { posts: Post[]; page: number; total: number; hasMore: boolean };
 
@@ -218,75 +213,24 @@ export function FeedView() {
         })}
       </div>
 
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        <select
-          value={roomType}
-          onChange={(e) =>
-            setParam((p) =>
-              e.target.value ? p.set("roomType", e.target.value) : p.delete("roomType")
-            )
+      <div className="mb-5 flex items-center gap-3">
+        <FilterPanel
+          roomType={roomType}
+          band={band}
+          styles={styles}
+          onRoomType={(value) =>
+            setParam((p) => (value ? p.set("roomType", value) : p.delete("roomType")))
           }
-          aria-label="Room type"
-          className="tb rounded-[2px] border border-[var(--rule)] bg-[var(--sheet)] px-2 py-1.5 text-[12px]"
-        >
-          <option value="">Any room</option>
-          {ROOM_TYPES.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={band}
-          onChange={(e) =>
-            setParam((p) => (e.target.value ? p.set("area", e.target.value) : p.delete("area")))
+          onBand={(value) => setParam((p) => (value ? p.set("area", value) : p.delete("area")))}
+          onToggleStyle={(tag) =>
+            setParam((p) => {
+              const rest = styles.filter((x) => x !== tag);
+              p.delete("style");
+              for (const x of styles.includes(tag) ? rest : [...rest, tag]) p.append("style", x);
+            })
           }
-          aria-label="Room size"
-          className="tb rounded-[2px] border border-[var(--rule)] bg-[var(--sheet)] px-2 py-1.5 text-[12px]"
-        >
-          <option value="">Any size</option>
-          {AREA_BANDS.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.label}
-            </option>
-          ))}
-        </select>
-
-        {STYLE_SUGGESTIONS.map((s) => {
-          const on = styles.includes(s);
-          return (
-            <button
-              key={s}
-              type="button"
-              onClick={() =>
-                setParam((p) => {
-                  const rest = styles.filter((x) => x !== s);
-                  p.delete("style");
-                  for (const x of on ? rest : [...rest, s]) p.append("style", x);
-                })
-              }
-              aria-pressed={on}
-              className={`tb rounded-full border px-3 py-1 text-[12px] transition-colors ${
-                on
-                  ? "border-[var(--blueline)] bg-[var(--blueline)] text-white"
-                  : "border-[var(--rule)] bg-[var(--sheet)] text-[var(--pencil)] hover:text-[var(--ink)]"
-              }`}
-            >
-              {s}
-            </button>
-          );
-        })}
-
-        {filtersActive && (
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="tb px-2 py-1 text-[12px] text-[var(--blueline)] underline underline-offset-4"
-          >
-            Clear filters
-          </button>
-        )}
+          onClear={clearFilters}
+        />
 
         {fresh && (
           <span className="tb ml-auto text-[11px] text-[var(--pencil)]">
