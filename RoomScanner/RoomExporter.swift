@@ -7,76 +7,110 @@ enum RoomExporter {
     // MARK: - CapturedRoom -> RoomLayoutJSON
 
     static func buildLayout(from room: CapturedRoom) -> RoomLayoutJSON {
-        let dims = roomDimensions(from: room.walls)
+        let frame = alignmentFrame(for: room.walls)
 
-        var objects = room.objects.map(objectFromObject)
-        objects += room.doors.map { objectFromSurface($0, category: "door") }
-        objects += room.windows.map { objectFromSurface($0, category: "window") }
-        // room.walls and room.openings intentionally excluded from `objects` —
-        // walls only feed the room-dimension calculation above; the new
-        // schema has no "wall"/"opening" category to put them in.
+        var objects = room.objects.map { objectJSON(from: $0, in: frame) }
+        objects += room.doors.map { surfaceJSON(from: $0, category: "door", in: frame) }
+        objects += room.windows.map { surfaceJSON(from: $0, category: "window", in: frame) }
+        // walls and openings intentionally excluded — walls define the room
+        // box itself, and the schema has no category for either.
 
         return RoomLayoutJSON(
-            room: RoomDimensionsJSON(width: dims.width, length: dims.length, height: dims.height),
+            room: RoomDimensionsJSON(width: frame.width, length: frame.length, height: frame.height),
             objects: objects
         )
     }
 
-    // MARK: - Room bounding box
+    // MARK: - Alignment
 
-    /// CapturedRoom has no single "room size" property — it's implied by
-    /// the walls. For each wall, project its two edge-midpoints into world
-    /// space and take the min/max span across every wall. Height is the
-    /// tallest wall. Unverified against a real scan yet — if a captured
-    /// room comes back with an oddly shaped/non-rectangular footprint,
-    /// this bounding-box approach will still produce *a* width/length
-    /// (the extent of the whole floor plan), just not a tight fit to an
-    /// irregular shape. That's an acceptable simplification for now.
-    private static func roomDimensions(from walls: [CapturedRoom.Surface]) -> (width: Float, length: Float, height: Float) {
-        guard !walls.isEmpty else { return (0, 0, 0) }
+    /// RoomPlan reports everything in ARKit world space, whose origin is
+    /// wherever the scan happened to start, at whatever rotation the device
+    /// was facing — the room itself sits at an arbitrary offset and angle
+    /// from it. The web schema promises "origin at room center, floor at
+    /// y = 0, axis-aligned", so every position and rotation has to be moved
+    /// into that frame before upload. Without this, objects render outside
+    /// the wall box and the walls line up with nothing.
+    private struct AlignmentFrame {
+        let yaw: Float
+        let centerX: Float
+        let centerZ: Float
+        let floorY: Float
+        let width: Float
+        let length: Float
+        let height: Float
+    }
+
+    private static func alignmentFrame(for walls: [CapturedRoom.Surface]) -> AlignmentFrame {
+        guard let dominant = walls.max(by: { $0.dimensions.x < $1.dimensions.x }) else {
+            return AlignmentFrame(yaw: 0, centerX: 0, centerZ: 0, floorY: 0, width: 0, length: 0, height: 0)
+        }
+
+        // Align to the longest wall — in any roughly rectangular room that's
+        // one of the major axes.
+        let yaw = yawOf(dominant.transform)
 
         var minX = Float.greatestFiniteMagnitude
         var maxX = -Float.greatestFiniteMagnitude
         var minZ = Float.greatestFiniteMagnitude
         var maxZ = -Float.greatestFiniteMagnitude
+        var floorY = Float.greatestFiniteMagnitude
         var maxHeight: Float = 0
 
         for wall in walls {
             let halfWidth = wall.dimensions.x / 2
-            let localEdges: [simd_float4] = [
-                simd_float4(-halfWidth, 0, 0, 1),
-                simd_float4(halfWidth, 0, 0, 1),
-            ]
-            for edge in localEdges {
-                let world = wall.transform * edge
-                minX = min(minX, world.x)
-                maxX = max(maxX, world.x)
-                minZ = min(minZ, world.z)
-                maxZ = max(maxZ, world.z)
+            for localX in [-halfWidth, halfWidth] {
+                let world = wall.transform * simd_float4(localX, 0, 0, 1)
+                let (x, z) = rotatedAboutY(x: world.x, z: world.z, by: -yaw)
+                minX = min(minX, x)
+                maxX = max(maxX, x)
+                minZ = min(minZ, z)
+                maxZ = max(maxZ, z)
             }
+            floorY = min(floorY, wall.transform.columns.3.y - wall.dimensions.y / 2)
             maxHeight = max(maxHeight, wall.dimensions.y)
         }
 
-        return (maxX - minX, maxZ - minZ, maxHeight)
+        return AlignmentFrame(
+            yaw: yaw,
+            centerX: (minX + maxX) / 2,
+            centerZ: (minZ + maxZ) / 2,
+            floorY: floorY,
+            width: maxX - minX,
+            length: maxZ - minZ,
+            height: maxHeight
+        )
     }
 
-    // MARK: - Transform -> position + rotationY
+    /// Standard right-handed Y-axis rotation applied to a point on the floor
+    /// plane. Verify the sign against a real scan before trusting it for
+    /// anything precise.
+    private static func rotatedAboutY(x: Float, z: Float, by angle: Float) -> (Float, Float) {
+        let c = cosf(angle)
+        let s = sinf(angle)
+        return (x * c + z * s, -x * s + z * c)
+    }
 
-    /// Assumes objects only rotate about the vertical axis (true for
-    /// furniture resting on a floor). Derived from the standard right-handed
-    /// Y-axis rotation matrix, but UNVERIFIED against real RoomPlan output —
-    /// test by rotating a known object between scans and confirming the
-    /// sign comes out right before trusting this for anything precise.
-    private static func positionAndRotationY(from transform: simd_float4x4) -> (position: [Float], rotationY: Float) {
-        let position = [transform.columns.3.x, transform.columns.3.y, transform.columns.3.z]
-        let rotationY = atan2f(-transform.columns.0.z, transform.columns.0.x)
-        return (position, rotationY)
+    /// Assumes rotation about the vertical axis only, which holds for
+    /// furniture resting on a floor and for walls.
+    private static func yawOf(_ transform: simd_float4x4) -> Float {
+        atan2f(-transform.columns.0.z, transform.columns.0.x)
+    }
+
+    /// Moves a RoomPlan transform into the room-centered, axis-aligned,
+    /// floor-at-zero frame the web app expects.
+    private static func place(_ transform: simd_float4x4, in frame: AlignmentFrame) -> (position: [Float], rotationY: Float) {
+        let translation = transform.columns.3
+        let (x, z) = rotatedAboutY(x: translation.x, z: translation.z, by: -frame.yaw)
+        return (
+            [x - frame.centerX, translation.y - frame.floorY, z - frame.centerZ],
+            yawOf(transform) - frame.yaw
+        )
     }
 
     // MARK: - Per-item conversion
 
-    private static func objectFromObject(_ object: CapturedRoom.Object) -> ObjectJSON {
-        let (position, rotationY) = positionAndRotationY(from: object.transform)
+    private static func objectJSON(from object: CapturedRoom.Object, in frame: AlignmentFrame) -> ObjectJSON {
+        let (position, rotationY) = place(object.transform, in: frame)
         return ObjectJSON(
             id: object.identifier.uuidString,
             category: mappedCategory(object.category),
@@ -87,8 +121,8 @@ enum RoomExporter {
         )
     }
 
-    private static func objectFromSurface(_ surface: CapturedRoom.Surface, category: String) -> ObjectJSON {
-        let (position, rotationY) = positionAndRotationY(from: surface.transform)
+    private static func surfaceJSON(from surface: CapturedRoom.Surface, category: String, in frame: AlignmentFrame) -> ObjectJSON {
+        let (position, rotationY) = place(surface.transform, in: frame)
         return ObjectJSON(
             id: surface.identifier.uuidString,
             category: category,
@@ -109,9 +143,8 @@ enum RoomExporter {
     }
 
     /// Apple's CapturedRoom.Object.Category collapses down to the web app's
-    /// fixed enum (bed, desk, chair, sofa, table, shelf, dresser, tv, lamp,
-    /// rug, door, window, other) — most of Apple's categories have no clean
-    /// equivalent and fall back to "other".
+    /// fixed enum — most of Apple's categories have no clean equivalent and
+    /// fall back to "other".
     private static func mappedCategory(_ category: CapturedRoom.Object.Category) -> String {
         switch category {
         case .bed: return "bed"
