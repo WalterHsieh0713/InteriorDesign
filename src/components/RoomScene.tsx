@@ -297,6 +297,50 @@ function Scene({
   const { camera, raycaster, gl } = useThree();
   const lightColor = layout.room.lightColor ?? "#ffffff";
 
+  // Where the key light comes from. A fixed corner is wrong in every room
+  // that doesn't happen to have a window in that corner — and the layout
+  // already tells us where the real windows are (LiDAR measures them
+  // directly; Gemini infers them). Light the room from its actual largest
+  // window, aimed inward at the room's center, and only fall back to the
+  // arbitrary corner when a scan found no windows at all.
+  const keyLight = useMemo(() => {
+    const { width, length, height } = layout.room;
+    const reach = Math.max(width, length, height) * 1.4;
+
+    const windows = layout.objects.filter((o) => o.category === "window");
+    const brightest = windows
+      .slice()
+      .sort((a, b) => b.dimensions[0] * b.dimensions[1] - a.dimensions[0] * a.dimensions[1])[0];
+
+    if (!brightest) {
+      return {
+        position: [width, height * 3, length] as [number, number, number],
+        intensity: 1.7,
+        fromWindow: false,
+      };
+    }
+
+    // Push out along the horizontal direction from room center to the
+    // window, so the light sits outside that wall shining in. A window
+    // somehow at dead center has no meaningful outward direction — fall
+    // back to something arbitrary but stable rather than NaN.
+    const outward = new THREE.Vector3(brightest.position[0], 0, brightest.position[2]);
+    if (outward.lengthSq() < 1e-6) outward.set(0, 0, 1);
+    outward.normalize();
+
+    return {
+      // Slightly above the window itself: real daylight rakes downward into
+      // a room rather than arriving dead level.
+      position: [
+        outward.x * reach,
+        brightest.position[1] + height * 0.45,
+        outward.z * reach,
+      ] as [number, number, number],
+      intensity: 2.1,
+      fromWindow: true,
+    };
+  }, [layout.room, layout.objects]);
+
   useEffect(() => setObjects(layout.objects), [layout]);
 
   const handleDragStart = useCallback((id: string, y: number) => {
@@ -360,9 +404,13 @@ function Scene({
           daylight) instead of flat white — an incandescent-lit room and a
           daylit one shouldn't come out looking identically lit. */}
       <ambientLight intensity={0.25} color={lightColor} />
+      {/* Key light — positioned from the room's real largest window when the
+          scan found one (see keyLight above), not a fixed corner. Its target
+          defaults to the origin, which is the room's center, so it always
+          rakes inward across the floor. */}
       <directionalLight
-        position={[layout.room.width, layout.room.height * 3, layout.room.length]}
-        intensity={1.7}
+        position={keyLight.position}
+        intensity={keyLight.intensity}
         color={lightColor}
         castShadow
         shadow-mapSize={[1024, 1024]}
@@ -381,6 +429,23 @@ function Scene({
         intensity={0.45}
         color={lightColor}
       />
+      {/* Windows don't just define the key light's direction, they're also
+          bright surfaces in their own right — without this, the wall a window
+          sits in reads as the darkest thing in the room, which is backwards. */}
+      {objects
+        .filter((o) => o.category === "window")
+        .map((w) => (
+          <pointLight
+            key={`window-${w.id}`}
+            // Pulled slightly inside the wall so the light is in the room
+            // rather than embedded in the wall geometry.
+            position={[w.position[0] * 0.85, w.position[1], w.position[2] * 0.85]}
+            color={lightColor}
+            intensity={0.7}
+            distance={Math.max(layout.room.width, layout.room.length)}
+            decay={2}
+          />
+        ))}
       <Walls room={layout.room} cameras={cameras} />
       {objects.map((obj) => (
         <DraggableObject
