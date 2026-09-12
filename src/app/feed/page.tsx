@@ -5,7 +5,7 @@ import { PlansShell } from "@/components/social/PlansShell";
 import { FeedView } from "@/components/social/FeedView";
 
 export const metadata: Metadata = {
-  title: "Browse rooms | Room Scanner",
+  title: "Browse rooms | Roomii",
   description: "Browse room layouts people have scanned and shared.",
 };
 

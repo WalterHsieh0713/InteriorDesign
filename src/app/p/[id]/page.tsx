@@ -22,7 +22,7 @@ export async function generateMetadata({ params }: PageProps<"/p/[id]">): Promis
   if (!post) return { title: "Plan not found" };
 
   return {
-    title: `${post.room_type}, ${Math.round(post.area_m2)} m² | Room Scanner`,
+    title: `${post.room_type}, ${Math.round(post.area_m2)} m² | Roomii`,
     description: post.caption ?? `A ${post.room_type} scanned and shared by @${post.author_handle}.`,
   };
 }

@@ -123,7 +123,7 @@ export function CommentThread({ postId, initialCount }: { postId: string; initia
   }
 
   return (
-    <section className="mt-10 border-t border-[var(--rule)] pt-6">
+    <section id="comments" className="mt-10 scroll-mt-24 border-t border-[var(--rule)] pt-6">
       <h2 className="tb text-[11px] uppercase tracking-wider text-[var(--pencil)]">
         {count === 0 ? "No comments yet" : `${count} ${count === 1 ? "comment" : "comments"}`}
       </h2>

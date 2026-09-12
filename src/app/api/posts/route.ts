@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   // at a missing or malformed layout produces a card with a broken
   // thumbnail and no way to open it.
   const { data: room, error: roomError } = await withRetry(() =>
-    supabase.from("rooms").select("layout").eq("session_id", session).maybeSingle()
+    supabase.from("rooms").select("layout, render_url").eq("session_id", session).maybeSingle()
   );
 
   if (roomError) {
@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
       author_handle: authorHandle,
       caption: caption || null,
       thumbnail_url: `/api/thumbnail/${encodeURIComponent(session)}`,
+      render_url: room.render_url ?? null,
       room_type: meta.roomType,
       width_m: meta.widthM,
       length_m: meta.lengthM,

@@ -37,7 +37,7 @@ const mono = DM_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Room Scanner",
+  title: "Roomii",
   description: "Scan your room, get an editable 3D layout, and see what fits.",
 };
 

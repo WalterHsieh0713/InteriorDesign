@@ -88,7 +88,7 @@ export default async function RoomsPage({ searchParams }: PageProps<"/rooms">) {
               <path d="M1.4 12.6h5.2v6" fill="none" stroke="currentColor" strokeWidth="1.5" opacity=".45" />
               <circle cx="13.6" cy="7" r="2.6" fill="var(--amber)" />
             </svg>
-            <span className="display hidden text-[17px] font-semibold sm:block">Room Scanner</span>
+            <span className="display hidden text-[17px] font-semibold sm:block">Roomii</span>
           </Link>
           <nav className="ml-auto flex items-center gap-0.5">
             <Link href="/" className={navLink}>
@@ -99,6 +99,9 @@ export default async function RoomsPage({ searchParams }: PageProps<"/rooms">) {
             </Link>
             <Link href="/feed" className={navLink}>
               Browse
+            </Link>
+            <Link href="/leaderboard" className={navLink}>
+              Leaderboard
             </Link>
           </nav>
           <Link

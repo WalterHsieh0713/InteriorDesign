@@ -116,7 +116,7 @@ export default function Home() {
               <path d="M1.4 12.6h5.2v6" fill="none" stroke="currentColor" strokeWidth="1.5" opacity=".45" />
               <circle cx="13.6" cy="7" r="2.6" fill="var(--amber)" />
             </svg>
-            <span className="display hidden text-[17px] font-semibold sm:block">Room Scanner</span>
+            <span className="display hidden text-[17px] font-semibold sm:block">Roomii</span>
           </Link>
           <nav className="ml-auto flex items-center gap-0.5">
             <Link href="/" className={`${navLink} bg-[var(--raised)] text-[var(--fg)]`} aria-current="page">
@@ -127,6 +127,9 @@ export default function Home() {
             </Link>
             <Link href="/feed" className={navLink}>
               Browse
+            </Link>
+            <Link href="/leaderboard" className={navLink}>
+              Leaderboard
             </Link>
           </nav>
           <a
@@ -214,7 +217,7 @@ export default function Home() {
               Point your phone at this code.
             </h2>
             <p className="mt-4 max-w-[46ch] leading-relaxed text-[var(--fg-2)]">
-              Scanning it with your phone&apos;s camera opens the RoomScanner app straight into a
+              Scanning it with your phone&apos;s camera opens the Roomii app straight into a
               capture for this session. Walk the room once; the measured layout lands back here on
               its own. Keep this tab open.
             </p>
@@ -338,7 +341,7 @@ export default function Home() {
             {[
               {
                 title: "Scan",
-                body: "Walk the room once with the RoomScanner app. LiDAR reads the walls where they actually are — bays, angled corners and partitions included — along with openings and anything tall enough to bump into.",
+                body: "Walk the room once with the Roomii app. LiDAR reads the walls where they actually are — bays, angled corners and partitions included — along with openings and anything tall enough to bump into.",
                 metric: "Around 40 seconds for a single room.",
               },
               {

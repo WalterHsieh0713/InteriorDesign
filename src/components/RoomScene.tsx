@@ -2,6 +2,7 @@
 
 import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Html, Environment } from "@react-three/drei";
 import * as THREE from "three";
@@ -1210,9 +1211,11 @@ function restOnFloor(layout: RoomLayout): RoomLayout {
 }
 
 export default function RoomScene({ sessionId }: { sessionId: string }) {
+  const router = useRouter();
   const [layout, setLayout] = useState<RoomLayout | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [sharing, setSharing] = useState(false);
   // If the GPU does drop the context (memory pressure on an older phone,
   // say), three.js doesn't rebuild lost textures/geometry on its own —
   // remounting the whole Canvas on restore is the reliable way back to a
@@ -1638,6 +1641,57 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
     return [d, d * 0.8, d] as const;
   }, [layout]);
 
+  // The feed's cards need to look like one consistent product, not forty
+  // different camera angles someone happened to leave the editor at. Snap
+  // back to the same angle every room opens with before capturing, so this
+  // matches `initialCameraPosition` regardless of how the room was last
+  // left — then hand off to /share whether or not the capture succeeded,
+  // since a failed upload should never block publishing (falls back to the
+  // 2D plan, same as before this existed).
+  const captureRenderForShare = useCallback(async () => {
+    const renderer = glRef.current;
+    const controls = controlsRef.current as unknown as {
+      object?: THREE.PerspectiveCamera;
+      target?: THREE.Vector3;
+      update?: () => void;
+    } | null;
+
+    if (!renderer || !controls?.object || !controls.target) return;
+
+    controls.object.position.set(...initialCameraPosition);
+    controls.target.set(0, 0, 0);
+    controls.update?.();
+
+    // Two rAFs: one for R3F to pick up the moved camera, one for the frame
+    // that camera produced to actually land in the (preserved) draw buffer.
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    );
+
+    const dataUrl = renderer.domElement.toDataURL("image/png");
+
+    try {
+      await fetch(`/api/rooms/${encodeURIComponent(sessionId)}/render`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataUrl }),
+      });
+    } catch {
+      // Best-effort — see comment above.
+    }
+  }, [initialCameraPosition, sessionId]);
+
+  const handleShareClick = useCallback(
+    async (e: React.MouseEvent) => {
+      e.preventDefault();
+      if (sharing) return;
+      setSharing(true);
+      await captureRenderForShare();
+      router.push(`/share?session=${sessionId}`);
+    },
+    [captureRenderForShare, router, sessionId, sharing]
+  );
+
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center p-8 text-center">
@@ -1876,11 +1930,13 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
             integration ask was one link to /share?session=. */}
         <a
           href={`/share?session=${sessionId}`}
+          onClick={handleShareClick}
           title="Share this design to Plans"
-          className="pointer-events-auto flex flex-shrink-0 items-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-medium text-white shadow-lg hover:bg-blue-700"
+          aria-disabled={sharing}
+          className="pointer-events-auto flex flex-shrink-0 items-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-medium text-white shadow-lg hover:bg-blue-700 aria-disabled:opacity-70"
         >
           <IconSend className="h-4 w-4" />
-          Share</a>
+          {sharing ? "Preparing…" : "Share"}</a>
       </div>
 
       {/* A finished design is two things: a picture to share, and the list of
@@ -1923,9 +1979,11 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
               </a>
               <a
                 href={`/share?session=${sessionId}`}
-                className="rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                onClick={handleShareClick}
+                aria-disabled={sharing}
+                className="rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 aria-disabled:opacity-70"
               >
-                Share this design
+                {sharing ? "Preparing…" : "Share this design"}
               </a>
             </div>
           </div>

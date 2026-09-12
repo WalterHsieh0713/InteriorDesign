@@ -76,29 +76,39 @@ export function PostCard({
             >
               @{post.author_handle}
             </Link>
-            {post.comment_count > 0 && (
-              <span> · {post.comment_count} {post.comment_count === 1 ? "comment" : "comments"}</span>
-            )}
           </p>
         </div>
 
-        {/* Drawing sets get stamped when they're approved. A red rubber
-            stamp is the positive mark in this world — a redline is a
-            correction, which is the opposite of what a like means. */}
-        <button
-          type="button"
-          onClick={() => onToggleLike(post)}
-          aria-pressed={liked}
-          aria-label={liked ? "Remove your stamp" : "Stamp this plan"}
-          title={liked ? "Remove your stamp" : "Stamp this plan"}
-          className={`tb shrink-0 rounded-full border px-2.5 py-1 text-[11px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--stamp)] ${
-            liked
-              ? "border-[var(--stamp)] bg-[var(--stamp)] text-[var(--on-amber)]"
-              : "border-[var(--rule)] bg-[var(--sheet)] text-[var(--pencil)] hover:border-[var(--stamp)] hover:text-[var(--stamp)]"
-          }`}
-        >
-          ✓ {post.like_count}
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {/* One click from Browse into the comment box on the plan's own
+              page — feedback belongs on the room it's about, not floating
+              in the grid. */}
+          <Link
+            href={`/p/${post.id}#comments`}
+            title="Leave feedback on this room"
+            className="tb rounded-full border border-[var(--rule)] bg-[var(--sheet)] px-2.5 py-1 text-[11px] text-[var(--pencil)] transition-colors hover:border-[var(--blueline)] hover:text-[var(--blueline)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blueline)]"
+          >
+            💬 {post.comment_count}
+          </Link>
+
+          {/* Drawing sets get stamped when they're approved. A red rubber
+              stamp is the positive mark in this world — a redline is a
+              correction, which is the opposite of what a like means. */}
+          <button
+            type="button"
+            onClick={() => onToggleLike(post)}
+            aria-pressed={liked}
+            aria-label={liked ? "Remove your stamp" : "Stamp this plan"}
+            title={liked ? "Remove your stamp" : "Stamp this plan"}
+            className={`tb rounded-full border px-2.5 py-1 text-[11px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--stamp)] ${
+              liked
+                ? "border-[var(--stamp)] bg-[var(--stamp)] text-[var(--on-amber)]"
+                : "border-[var(--rule)] bg-[var(--sheet)] text-[var(--pencil)] hover:border-[var(--stamp)] hover:text-[var(--stamp)]"
+            }`}
+          >
+            ✓ {post.like_count}
+          </button>
+        </div>
       </div>
     </article>
   );

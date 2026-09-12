@@ -52,7 +52,7 @@ export function PlansShell({
               <circle cx="13.6" cy="7" r="2.6" fill="var(--amber)" />
             </svg>
             <span className="display hidden text-[17px] font-semibold sm:block">
-              Room Scanner
+              Roomii
             </span>
           </Link>
 
@@ -62,6 +62,9 @@ export function PlansShell({
             </Link>
             <Link href="/feed" className={navLink}>
               Browse
+            </Link>
+            <Link href="/leaderboard" className={navLink}>
+              Leaderboard
             </Link>
             <Link href="/#scan" className={navLink}>
               Scan

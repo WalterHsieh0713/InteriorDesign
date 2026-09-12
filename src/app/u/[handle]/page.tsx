@@ -32,7 +32,7 @@ async function loadPosts(handle: string): Promise<Post[]> {
 
 export async function generateMetadata({ params }: PageProps<"/u/[handle]">): Promise<Metadata> {
   const { handle } = await params;
-  return { title: `@${decodeURIComponent(handle)} | Room Scanner` };
+  return { title: `@${decodeURIComponent(handle)} | Roomii` };
 }
 
 export default async function ProfilePage({ params }: PageProps<"/u/[handle]">) {
