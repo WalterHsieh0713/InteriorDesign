@@ -338,7 +338,7 @@ export default function Home() {
                   <img
                     src={post.render_url ?? post.thumbnail_url}
                     alt={`Floor plan of a ${post.room_type}`}
-                    className="aspect-square w-full bg-[var(--ground)] object-cover"
+                    className="aspect-square w-full bg-[var(--ground)] object-contain"
                     loading="lazy"
                   />
                   <div className="border-t border-[var(--line-soft)] px-3 py-2.5">

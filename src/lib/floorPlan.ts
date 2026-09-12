@@ -71,24 +71,50 @@ function safeColor(value: string | undefined, fallback: string): string {
 const round = (n: number) => Math.round(n * 100) / 100;
 
 export type FloorPlanOptions = {
-  /** Square viewport edge, in px. */
+  /** Long edge of the viewport, in px. The short edge follows the room. */
   size?: number;
 };
 
+/**
+ * How wide a plan is drawn relative to how tall, as width / height.
+ *
+ * The plan used to be square regardless of the room, which threw away the
+ * one fact this product is sure of. A 7.2 x 3.9 m living room and a
+ * 2.6 x 4.2 m box room are different shapes, and in a masonry grid that
+ * difference is what makes the page readable at a glance.
+ *
+ * Clamped, though. A scan can report a 1.2 x 8 m hallway, and an unclamped
+ * card for it would be a sliver tall enough to push a whole column off the
+ * screen. Beyond the clamp the plan simply letterboxes inside the card, so
+ * the drawing stays true even where the card shape stops tracking it.
+ *
+ * Callers rendering a thumbnail should set this same ratio on the element
+ * so the grid reserves the right space before the image loads.
+ */
+export function planAspect(width: number, length: number): number {
+  if (!(width > 0) || !(length > 0)) return 1;
+  return Math.min(1.7, Math.max(0.58, width / length));
+}
+
 export function floorPlanSvg(layout: RoomLayout, options: FloorPlanOptions = {}): string {
-  const size = options.size ?? 512;
-  const pad = Math.round(size * 0.06);
+  const base = options.size ?? 512;
   const { room, objects } = layout;
 
-  const inner = size - pad * 2;
-  // Fit the room to the square without distorting it: one scale for both
-  // axes, letterboxed. A per-axis scale would make a long room look square
-  // and quietly lie about its proportions.
-  const scale = Math.min(inner / room.width, inner / room.length);
+  // The canvas takes the room's proportion, so a wide room yields a wide
+  // card and a long room a tall one.
+  const aspect = planAspect(room.width, room.length);
+  const width = aspect >= 1 ? base : Math.round(base * aspect);
+  const height = aspect >= 1 ? Math.round(base / aspect) : base;
+
+  const pad = Math.round(Math.min(width, height) * 0.06);
+
+  // One scale for both axes, letterboxed. A per-axis scale would make a long
+  // room look square and quietly lie about its proportions.
+  const scale = Math.min((width - pad * 2) / room.width, (height - pad * 2) / room.length);
   const planW = room.width * scale;
   const planL = room.length * scale;
-  const originX = (size - planW) / 2;
-  const originY = (size - planL) / 2;
+  const originX = (width - planW) / 2;
+  const originY = (height - planL) / 2;
 
   const px = (x: number) => round(originX + (x + room.width / 2) * scale);
   const py = (z: number) => round(originY + (z + room.length / 2) * scale);
@@ -107,7 +133,7 @@ export function floorPlanSvg(layout: RoomLayout, options: FloorPlanOptions = {})
   const parts: string[] = [];
 
   parts.push(
-    `<rect width="${size}" height="${size}" fill="${INK.ground}"/>`,
+    `<rect width="${width}" height="${height}" fill="${INK.ground}"/>`,
     `<rect x="${round(originX)}" y="${round(originY)}" width="${round(planW)}" height="${round(planL)}" fill="${floor}" stroke="${wall}" stroke-width="3" stroke-opacity="0.55"/>`
   );
 
@@ -145,7 +171,7 @@ export function floorPlanSvg(layout: RoomLayout, options: FloorPlanOptions = {})
   }
 
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" ` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" ` +
     `role="img" aria-label="Floor plan, ${round(room.width)} by ${round(room.length)} metres, ${objects.length} objects">` +
     parts.join("") +
     `</svg>`

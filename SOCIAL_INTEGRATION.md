@@ -344,3 +344,40 @@ thumbnails are still square, so the grid is a fixed grid rather than a true
 masonry. Making it masonry means teaching `floorPlanSvg` to emit each room's
 real aspect ratio, which is a behaviour change and was deliberately left out
 of a restyle.
+
+### v5 - 2026-09-12 - plans are no longer square, and the grid is masonry
+
+The last entry said the square thumbnail and the fixed grid were left alone
+because changing them was behaviour rather than styling. The owner asked for
+the staggered layout, so that is now done.
+
+**`floorPlanSvg` emits a non-square canvas.** The viewBox takes the room's own
+proportion instead of always being a square that the plan is letterboxed
+into. `options.size` now means the **long** edge, not the square edge. If you
+call this anywhere, that is the one change that could surprise you.
+
+**There is a new export, `planAspect(width, length)`,** returning width over
+height for a room. It is the single source of that ratio, and anything
+rendering a plan thumbnail should set it on the element so the grid reserves
+the right height before the image loads. `PostCard` does this with an inline
+`aspect-ratio`; without it the whole feed jumps around as plans stream in.
+
+**The ratio is clamped to 0.58 - 1.70.** Real scans produce nonsense at the
+edges. There is a row in `rooms` right now measuring 2.71 x 0.22 m, a ratio
+of 12.3, and an unclamped card for it would be a sliver tall enough to push a
+column off the screen. Past the clamp the plan letterboxes inside the card,
+so the drawing stays true even where the card shape stops tracking it.
+
+**If you build 3D thumbnails for `render_url`,** match the post's
+`planAspect(width_m, length_m)` and the dark ground, or your renders will be
+the only ones in the grid that crop or letterboxed oddly.
+
+**Everywhere else that draws a plan in a fixed square box now uses
+`object-contain`** rather than `object-cover`: the landing rail,
+`/u/[handle]`, `SimilarRooms` and `ShareComposer`. The SVG ground is the same
+colour as the card ground, so the letterboxing is invisible. If you add a new
+plan thumbnail somewhere, do the same or it will crop.
+
+One honest caveat on how this looks today: most seeded rooms came from the
+same few real scans and cluster around 8.8 x 7.2 m, so the stagger is subtle.
+That is the data, not the layout, and it gets more varied as real scans land.

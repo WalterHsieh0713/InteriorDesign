@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Post } from "@/lib/postMetadata";
+import { planAspect } from "@/lib/floorPlan";
 
 /**
  * One plan in the grid, drawn as a sheet from a drawing set: the floor plan
@@ -33,7 +34,7 @@ export function PostCard({
   const budget = formatBudget(post.total_budget_cents);
 
   return (
-    <article className="flex flex-col">
+    <article className="mb-4 flex break-inside-avoid flex-col sm:mb-5">
       <Link
         href={`/p/${post.id}`}
         className="sheet block overflow-hidden rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blueline)]"
@@ -42,7 +43,11 @@ export function PostCard({
         <img
           src={post.render_url ?? post.thumbnail_url}
           alt={`Floor plan of a ${post.room_type}, ${formatArea(post.area_m2)}`}
-          className="aspect-square w-full bg-[var(--ground)] object-cover"
+          // The ratio is set here as well as inside the SVG so the column
+          // reserves the right height before the image arrives. Without it
+          // every card jumps as the grid settles.
+          style={{ aspectRatio: planAspect(post.width_m, post.length_m) }}
+          className="w-full bg-[var(--ground)] object-cover"
           loading="lazy"
         />
         <div className="border-t border-[var(--line-soft)] px-3.5 py-2.5">

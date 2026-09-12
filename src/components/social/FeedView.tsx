@@ -253,13 +253,22 @@ export function FeedView() {
       )}
 
       {loading ? (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-6 md:grid-cols-3 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="sheet aspect-square animate-pulse rounded-2xl" />
+        <div className="columns-2 gap-4 sm:columns-3 sm:gap-5 lg:columns-4 xl:columns-5">
+          {/* Uneven on purpose: a skeleton of equal squares promises a grid
+              the real feed does not deliver. */}
+          {[76, 108, 62, 94, 118, 70, 100, 84, 66, 112].map((h, i) => (
+            <div
+              key={i}
+              style={{ height: `${h * 2}px` }}
+              className="sheet mb-4 animate-pulse break-inside-avoid rounded-2xl sm:mb-5"
+            />
           ))}
         </div>
       ) : posts.length > 0 ? (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-6 md:grid-cols-3 lg:grid-cols-4">
+        // Masonry by CSS columns. Each card keeps its room's real
+        // proportion, so the ragged edge of this grid is made of actual
+        // measurements rather than a decorative stagger.
+        <div className="columns-2 gap-4 sm:columns-3 sm:gap-5 lg:columns-4 xl:columns-5">
           {posts.map((post) => (
             <PostCard
               key={post.id}

@@ -46,7 +46,7 @@ export async function SimilarRooms({ post }: { post: Post }) {
               <img
                 src={other.render_url ?? other.thumbnail_url}
                 alt={`Floor plan of a ${other.room_type}, ${Math.round(other.area_m2)} square metres`}
-                className="aspect-square w-full bg-[var(--paper)] object-cover"
+                className="aspect-square w-full bg-[var(--paper)] object-contain"
                 loading="lazy"
               />
               <div className="border-t border-[var(--rule)] px-2 py-1.5">

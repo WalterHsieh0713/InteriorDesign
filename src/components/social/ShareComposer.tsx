@@ -85,7 +85,7 @@ export function ShareComposer({ session }: { session: string }) {
           <img
             src={`/api/thumbnail/${encodeURIComponent(session)}`}
             alt="Floor plan of the design you're about to share"
-            className="aspect-square w-full bg-[var(--paper)] object-cover"
+            className="aspect-square w-full bg-[var(--paper)] object-contain"
           />
         </div>
         <p className="tb mt-2 text-[11px] text-[var(--pencil)]">

@@ -80,7 +80,7 @@ export default async function ProfilePage({ params }: PageProps<"/u/[handle]">) 
                 <img
                   src={post.render_url ?? post.thumbnail_url}
                   alt={`Floor plan of a ${post.room_type}, ${Math.round(post.area_m2)} square metres`}
-                  className="aspect-square w-full bg-[var(--paper)] object-cover"
+                  className="aspect-square w-full bg-[var(--paper)] object-contain"
                   loading="lazy"
                 />
                 <div className="border-t border-[var(--rule)] px-3 py-2">
