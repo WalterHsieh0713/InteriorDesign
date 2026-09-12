@@ -2,49 +2,79 @@
 
 **Audience: the Claude Code agents working on the scanner and on the social
 feed.** You do not need to read our code to work with us. This file says what we
-built, the one change that touches you, and which files are ours so you can
-avoid them.
+built, the changes that touch you, and which files are ours so you can avoid
+them.
 
 It is also the running journal for this workstream. Newest entry at the bottom.
+
+**Scanner people: read [SCANNER_CONTRACT.md](./SCANNER_CONTRACT.md) instead.**
+It is the standalone brief for what the editor needs from a scan — units,
+coordinate space, categories, what not to send. This file is about the seams
+between our three workstreams.
 
 ---
 
 ## What we built
 
 The middle of the product: you scan a room, **we let you furnish it**. Select a
-piece of furniture, drag it, rotate it, delete it, or swap it for a real product
-you can buy — then snapshot the result and hand off to the feed.
+piece of furniture, drag it, rotate it, delete it, swap it for a real product you
+can buy, hang posters, run LED strips, place a projector and see how big its
+picture lands — then snapshot the result and get a costed shopping list.
 
-Catalog is 31 live IKEA US products and 57 3D models.
+40 catalog items and 57 3D models. Live at `/room?session=<id>`, and every
+scanned room is now browsable at `/rooms`.
 
 ---
 
-## The one thing that touches you
+## What touches you
 
-**`src/lib/roomLayoutSchema.ts` gained a `binding` field on every object.**
+### 1. `binding` on every object (landed v1)
 
 ```ts
 binding: ItemBindingSchema.default({ source: "owned" })
 ```
 
-Three arms: `owned` (the scan found it — someone already has it), `catalog` (a
-real product, carries `catalogItemId`, `priceCents`, `url`), and `custom`.
+Three arms: `owned` (the scan found it), `catalog` (a real product, carries
+`catalogItemId` / `priceCents` / `url`), `custom`. The `.default()` means every
+layout saved before it still parses. **The scanner must not emit this** — its
+answer is always "owned", and the default does that for you.
 
-**This is safe to land under you.** The `.default()` means every layout saved
-before this change still parses and comes back as `owned`, which is exactly what
-a scanned object is. Nothing you write needs to change, and **the layout
-producer must not emit `binding`** — it is written client-side when a person
-swaps something in.
+For the feed: `total_budget_cents` stops being null the moment someone swaps a
+product in, so **the budget filter can come out of hiding**.
 
-Rebase onto this commit before building anything new on the schema.
+### 2. `preset` on an object (optional, additive)
 
-For the feed: `total_budget_cents` stops being null the moment a person swaps in
-a product, so **the budget filter can come out of hiding**. `priceCents` is
-deliberately copied onto the binding rather than looked up from the catalog, so
-a post keeps the price it had when it was shared.
+A string like `"poster:comic:a2"` or `"led:ceiling"`, describing decor whose
+variant is not a separate product. A scan never sets it. Anything that does not
+recognise a preset can ignore the object.
 
-**And the share button you asked for is in.** `/room` now has a Share link to
-`/share?session=<id>`. That was your whole integration ask; it is done.
+### 3. `room.wallFeatures` (optional, additive)
+
+Columns, boxed-in pipework and alcoves. Real rooms are not four flat rectangles,
+and furniture that ignores a pillar ends up modelled inside it. Shape is in
+SCANNER_CONTRACT.md. Absent means a plain rectangular room.
+
+### 4. `/api/layout` now normalises on read AND write
+
+This one matters most, and it is a **relaxation**, not a new requirement.
+
+The route used to return the raw JSONB and validate strictly on save. Pointed at
+the live database that was fatal twice over: every room saved before `binding`
+existed came back without it and crashed the editor, and the scanner's real
+output carries RoomPlan category names (`washerDryer`, `oven`) that the enum
+rejects — so a room could be opened but never saved.
+
+Both directions now go through `normalizeLayout()`, which maps unknown
+categories (`television` → `tv`, `storage` → `shelf`/`dresser` by height,
+appliances → `other`) and parses so defaults apply. **You can send RoomPlan's
+own category names and we will cope**, though mapping them yourself is still
+better — see SCANNER_CONTRACT.md. Anything unrecognised becomes `other` and
+renders as a plain box.
+
+### 5. The share button you asked for is in
+
+`/room` links to `/share?session=<id>`. That was the social workstream's whole
+integration ask; it is done.
 
 ---
 
@@ -54,132 +84,146 @@ a post keeps the price it had when it was shared.
 
 ```
 src/lib/catalogItem.ts          the CatalogItem schema, toDimensions, toBinding
-src/lib/catalog.ts              merges generated + manual, query helpers
-src/lib/catalog.generated.ts    MACHINE OUTPUT — never edit, the build overwrites it
-src/lib/catalog.manual.ts       hand-verified items; the build never touches this
-src/lib/models.generated.ts     MACHINE OUTPUT — the 57 models and their real sizes
-src/components/ProductMesh.tsx  loads a glTF model, scales it to real dimensions
-src/components/CatalogPanel.tsx the furniture picker
-scripts/build-catalog.mjs       IKEA live search -> catalog.generated.ts
-scripts/build-abo.mjs           downloads + compresses ABO models
-scripts/abo-survey.mjs          surveys what ABO has, without downloading geometry
-scripts/add-manual.mjs          writes hand-measured items into catalog.manual.ts
+src/lib/catalog.ts              merges the three catalog sources, query helpers
+src/lib/catalog.generated.ts    MACHINE OUTPUT — the build overwrites it
+src/lib/catalog.manual.ts       MACHINE OUTPUT of add-verified.mjs; hand-measured
+src/lib/catalog.accessories.ts  diffuser + projector, hand-entered
+src/lib/models.generated.ts     MACHINE OUTPUT — 57 models and their real sizes
+src/lib/placement.ts            elevation, wall snapping, footprints, clamping
+src/lib/posters.ts              poster sizes and generated artwork
+src/lib/ledPresets.ts           LED runs, and which roll a run needs
+src/lib/projection.ts           projector throw maths
+src/lib/shoppingList.ts         grouping, totals, price parsing
+src/lib/normalizeLayout.ts      schema drift + RoomPlan category mapping
+src/components/ProductMesh.tsx  glTF scaled to a product's real size
+src/components/PosterMesh.tsx   framed poster, artwork drawn at runtime
+src/components/LedStrips.tsx    glowing runs + their invisible pick sleeves
+src/components/AccessoryMesh.tsx diffuser, projector, projected image
+src/components/MirrorMesh.tsx   reflective mirror
+src/components/WallFeatures.tsx pillars, bumps, recesses
+src/components/CatalogPanel.tsx the right-hand rail and drawer
+src/components/RoomPanel.tsx    room dimensions and wall features
+src/components/ShoppingList.tsx the costed list, with editable prices
+src/app/rooms/page.tsx          the scanned-room index
+src/app/api/sessions/route.ts   that index's data
+scripts/*.mjs                   catalog + model build pipeline
 public/models/                  57 .glb files
 public/draco/                   Draco decoder
 ```
 
 ### Shared — we edited, carefully
 
-- **`src/lib/roomLayoutSchema.ts`** — added `ItemBindingSchema`, the `binding`
-  field, and an exported `ObjectCategory` type. Nothing existing was changed.
-- **`src/components/RoomScene.tsx`** — selection, rotate, delete, add/swap, and
-  the snapshot. The drag maths, the `Walls` component, the projective-texture
-  path and the WebGL-context-loss recovery are untouched.
-- **`next.config.ts`** — added `images.remotePatterns` for `www.ikea.com`, since
-  catalog thumbnails are IKEA's own product photography.
+- **`src/lib/roomLayoutSchema.ts`** — added `ItemBindingSchema`, `binding`,
+  `preset`, `WallFeatureSchema`, `room.wallFeatures`, and an exported
+  `ObjectCategory` / `WALL_SIDES`. Nothing existing was changed or removed.
+- **`src/app/api/layout/route.ts`** — normalises on read and write (see above).
+  The Supabase calls and the response shapes are untouched.
+- **`src/components/RoomScene.tsx`** — the editor. The drag maths, projective
+  textures and WebGL-context-loss recovery are the original ones.
+- **`src/app/page.tsx`** — added a nav to `/rooms` and `/feed`. The QR flow,
+  polling and inference trigger are untouched.
+- **`next.config.ts`** — `images.remotePatterns` for `www.ikea.com`.
 
 ### Yours — we have not touched any of these
 
-`src/app/capture/`, `src/app/page.tsx`, `src/components/CaptureFlow.tsx`,
-`FurnitureMesh.tsx`, `textures.ts`, `projectiveTexture.ts`, every API route, and
-the whole social layer (`src/app/feed/`, `src/app/share/`, `src/app/p/`,
+`src/app/capture/`, `src/components/CaptureFlow.tsx`, `FurnitureMesh.tsx`,
+`textures.ts`, `projectiveTexture.ts`, every other API route, and the whole
+social layer (`src/app/feed/`, `src/app/share/`, `src/app/p/`,
 `src/components/social/`, `src/lib/{floorPlan,postMetadata,device,retry}.ts`).
 
 ---
 
 ## How the catalog works
 
-Two sources, merged in `catalog.ts`, **manual wins on id collision**:
+Three sources, merged in `catalog.ts`. **Hand-authored wins on id collision.**
 
 | File | What it is | Trust |
 |---|---|---|
-| `catalog.generated.ts` | Built from IKEA's live US search API | Prices/links/photos real; **most dimensions partly estimated** |
-| `catalog.manual.ts` | Hand-measured off the product page | Fully trustworthy |
+| `catalog.generated.ts` | IKEA's live US search API | Prices/links/photos real; some dimensions estimated |
+| `catalog.manual.ts` | Hand-measured off product pages | Fully trustworthy |
+| `catalog.accessories.ts` | Amazon accessories, hand-entered | Fully trustworthy |
 
 ```bash
 node scripts/build-catalog.mjs   # refresh prices, links, photos from IKEA
-node scripts/add-manual.mjs      # write hand-measured items (edit its table first)
+node scripts/add-verified.mjs    # rewrite hand-measured items (edit its tables first)
 ```
 
-**Re-running `build-catalog.mjs` before the demo is the verification pass.** It
-is cheap, it catches anything that went out of stock or changed price, and it
-**cannot clobber a hand-measured item** — those live in `catalog.manual.ts`,
-which the build never writes.
+**Re-running `build-catalog.mjs` before a demo is the verification pass.** It is
+cheap, catches anything that changed price or went out of stock, and **cannot
+clobber a hand-measured item** — those live in files the build never writes.
 
 ### `measuredAxes` is the honesty mechanism
 
-IKEA publishes measurements unevenly. Every item records which axes were
-actually read off the storefront; anything absent was inferred. The catalog
-panel shows `measured` or `est.` from this field. **Do not fill this in unless
-a human actually read the number.**
+Every item records which axes a retailer actually stated. Anything absent was
+inferred and the UI marks it "est." rather than passing it off as measured.
+**Do not fill this in unless a human read the number off the page.**
 
-Current state: **4 of 31 fully verified.** The rest carry at least one inferred
-axis. See "Still open" below.
+Current state: **37 of 40 fully measured.** The three left are LACK (height),
+LINDBYN Mirror (depth) and ALEX on casters (depth) — all axes IKEA does not
+publish on a listing card.
 
 ---
 
 ## Things we learned the hard way
 
-- **IKEA's two-number measurement is ambiguous and the payload does not say
-  which.** `itemMeasureReferenceText` is the only measurement field that exists.
-  Three numbers are always width × depth × height. Two numbers are width ×
-  **height** for upright storage and mirrors, and width × **depth** for surfaces
-  and seating. Reading a bookcase's `74 3/4"` as depth gives you a shelf 5cm
-  tall and 1.9m deep.
+- **A zod default only applies to something that was PARSED.** Returning stored
+  JSONB straight from a route skips every default, so a field added last week is
+  simply missing on every older row. This crashed the editor on all 20 existing
+  rooms before `normalizeLayout` existed.
+- **IKEA's two-number measurement is ambiguous and nothing in the payload says
+  which.** Three numbers are width × depth × height. Two are width × **height**
+  for upright storage and mirrors, width × **depth** for surfaces and seating.
+  Reading a bookcase's `74 3/4"` as depth gives a shelf 5cm tall and 1.9m deep.
+  Confirmed later from ALEX and MICKE listing cards.
 - **Never infer a height by scaling a stand-in model.** Furniture height is
-  standardised by category — a narrow desk is still ~75cm tall. Scaling a
-  1.35m-wide model's height down to a 1.05m-wide product invents a 58cm desk.
-  `TYPICAL_HEIGHT` in the build script exists for this.
-- **Pair models by proportion, not by arrival order.** Round-robin pairing gave
-  a 1.9m bookcase a 5cm wall-shelf mesh, which then stretched 36×. Scoring
-  candidates on the axes actually measured took the worst case to 3.8×.
+  standardised per category; a narrow desk is still ~75cm tall.
+- **A category is too coarse for height on its own.** A floor lamp and a table
+  lamp are both `lamp` and differ by a metre. Read the product type.
+- **Footprints must account for facing.** `dimensions` are in an object's local
+  frame, so a bookcase turned 90° occupies its DEPTH along X. Ignoring that held
+  a rotated shelf 26cm off the wall it was pointed at.
 - **`preserveDrawingBuffer: true` is mandatory for snapshots.** Without it
-  `toBlob`/`toDataURL` return a blank image **and report no error** — a working
-  button that silently produces nothing.
+  `toBlob`/`toDataURL` return a blank image **and report no error**.
 - **The Draco decoder is self-hosted at `/draco/gltf/`.** drei defaults to
-  fetching it from Google's CDN, which makes every furniture model a live
-  network dependency at demo time.
+  Google's CDN, which makes every furniture model a live network dependency at
+  demo time.
 - **Catalog thumbnails must be flat images.** Browsers cap simultaneous WebGL
   contexts around 8–16; a grid of live 3D previews crashes the tab.
-- **ABO model dimensions come from each mesh's own bounding box**, not from
-  `item_dimensions` (absent on ~70% of rows, often packaging sizes). Verified
-  every one of the 57 files is a single flat node with no matrices or nested
-  scales, so the measurement is exact.
+- **Thin geometry needs a fat invisible pick target.** An 18mm LED strip cannot
+  be clicked; a 90mm invisible sleeve around it can.
+- **OrbitControls' `dollyIn`/`dollyOut` are named after the camera's radius,**
+  not the apparent size of the room. "Zoom in" calls `dollyOut`.
 
 ---
 
 ## Attribution — required
 
 3D models are **Amazon Berkeley Objects, CC BY 4.0**. Credit must appear
-wherever the models are displayed. It is currently in the catalog panel footer.
+wherever the models are displayed; it is currently in the catalog panel footer.
 If you surface models anywhere else, carry the credit with them.
 
-The models are lookalikes, not the products they sit next to. The UI says
-"representative model" and should keep saying so.
+The models are lookalikes, not the products beside them. The UI says
+"representative model" and should keep saying so. Poster artwork is original
+work generated at runtime, deliberately not real cars, athletes or comic
+characters, because this app publishes rooms to a public feed.
 
 ---
 
 ## Still open
 
-1. **Dimension validation — the biggest one.** 27 of 31 items carry at least one
-   inferred axis. Worst offenders: ALEX 3.8×, LINDBYN Mirror 3.0×, BARLAST Floor
-   lamp 2.9×, LACK Coffee table 2.6×, MARIUS Stool 2.4×. Every item measured by
-   hand so far landed under 2× — real numbers fix the size *and* let the pairing
-   algorithm find a better mesh.
-2. **NEIDEN and MALM bed sizes are unknown.** The IKEA API carries no size field
-   and the URL slug omits it. Twin vs Queen is a 50cm error on the largest
-   object in the room. Someone has to read the size selector on the page.
-3. **SALTMYRAN Loveseat is 3.47m wide** — it inherited a sectional model's
-   width. Left in deliberately as a visible example of the problem.
-4. **Snapshot downloads locally, it does not upload.** `/api/upload` writes to
-   the scanner's photo bucket that `/api/photos` polls, so pushing snapshots
-   there would make them appear as captured photos on the desktop page. Wiring
-   the snapshot to `posts.thumbnail_url` needs its own small endpoint.
-5. **`public/models/` is 63MB in git.** Works, and Vercel serves it fine, but it
-   is permanent in history. Moving it to Supabase Storage is the alternative.
-6. **Not yet verified in a browser.** Build and types pass; drag feel, model
-   orientation (especially wall art standing up) and how the lookalike scaling
-   actually looks still need a human.
+1. **Three catalog items still carry one estimated axis** (above).
+2. **The snapshot downloads; it does not upload.** `/api/upload` writes to the
+   scanner's photo bucket that `/api/photos` polls, so putting snapshots there
+   would make them appear as captured photos on the desktop page. Wiring the
+   snapshot to `posts.thumbnail_url` needs its own small endpoint.
+3. **`public/models/` is 63MB in git.** Works, and Vercel serves it fine, but it
+   is permanent in history. Supabase Storage is the alternative.
+4. **The scans in the database are 8.8 × 7.2m** — apartment-sized. The catalog
+   is curated for dorms, so a 1.05m desk reads small in them.
+5. **One pre-existing lint error**, `set-state-in-effect` in `RoomScene.tsx`,
+   predates this branch.
+6. **Supabase keys were shared in plain text** during setup and this repo is
+   public. Nothing leaked — `.env.local` is gitignored — but rotate them.
 
 ---
 
@@ -218,3 +262,64 @@ was also the only pointer to `IOS_LIDAR_AGENT.md` on the
 `archive/swift-roomplan` branch, and the only written record of the
 "never push to main, branch as agent-N" convention. Recoverable with
 `git show 8f6863f:PARALLEL_AGENTS.md`.
+
+### v2 — 2026-09-12 — elevation, decor, real data, and the scanner contract
+
+Eighteen commits. The editor went from "move furniture on a floor" to something
+that survives a real scan and produces something you can act on.
+
+**Elevation.** Three placement rules by mount: floor pieces slide as before;
+tabletop pieces come to rest on whatever is under them, so a desk lamp rises
+onto a nightstand and drops onto a lower desk with nobody typing a height; wall
+pieces snap to the nearest wall and then move freely up and down it. Rugs are
+excluded as surfaces — you stand on the floor a rug covers.
+
+**Decor and tech.** Posters (4 designs × 4 print sizes, artwork generated at
+runtime, no price so they cannot pollute a budget). LED runs stored as a *rule*
+rather than geometry, so moving the desk moves the strip above it; only runs the
+room can hold are offered, and the run's length picks which roll you buy. An
+ASAKUKI diffuser and a mini projector, both hand-measured from their listings.
+The projector draws its **real** picture on the wall it faces — throw ratio
+1.355 derived from the listing's own distance table, reproducing its 50″ and 72″
+rows to within 4cm — and the rectangle turns red when it no longer fits.
+
+**Shopping list.** A snapshot now returns the picture *and* what it would cost.
+Identical items collapse to one line with a quantity, scanned furniture is
+excluded, prices are editable and write back to every object on that line, and
+an unpriced line says so rather than counting as free.
+
+**The room itself.** All four walls render, each hiding only while the camera is
+outside it — which let wall opacity go from 40% to 88%, so rooms stopped looking
+like ghosts. `room.wallFeatures` describes pillars, bumps and alcoves. Room
+dimensions are editable behind a deliberate unlock, because a scan's size is a
+measurement rather than a preference.
+
+**Real data, and two bugs it found.** Pointed at the live Supabase project, the
+editor would have crashed on all 20 existing rooms (`binding` absent from
+unparsed JSONB) and then refused to save the ones it could open (RoomPlan
+categories rejected). `normalizeLayout` fixes both, on read and write.
+
+**A bug reported from a screenshot.** A shelf turned to face a side wall could
+not be pushed against it: footprints ignored facing, so a 0.80 × 0.28 bookcase
+turned 90° was treated as 0.80 wide along X and held 26cm short. `extentsOf`
+rotates the footprint before measuring; everything that positions an object goes
+through it.
+
+**Measurements.** 37 of 40 items fully measured, up from 12. Six product
+variants added from listing cards the search API never surfaced (NEIDEN Full,
+two more MICKE desks, three more ALEX units). **One retraction:** a screenshot
+read earlier as GLOSTAD turned out to be SALTMYRAN — two sofas cannot share one
+set of numbers, so GLOSTAD's were withdrawn and re-measured later.
+
+**Connective tissue.** 23 scanned rooms sat in the database with no way to reach
+any of them; `/rooms` lists them all and opens the editor on one. Undo, redo and
+reset, with Ctrl/Cmd+Z. The catalog moved from one button in the toolbar to a
+permanent right-hand rail. Zoom was inverted and is now not.
+
+**Written:** [SCANNER_CONTRACT.md](./SCANNER_CONTRACT.md), the standalone brief
+for the scanner. Every payload in it is executed against the real schema.
+
+**Verified against the live project:** a 28-object, 124-camera-frame LiDAR scan
+loads with every binding present and no invalid categories, and a moved chair
+round-trips through PUT and back with the frames intact. `npx next build`,
+TypeScript and lint all pass, bar the pre-existing error noted above.
