@@ -2,8 +2,27 @@ import Link from "next/link";
 import type { SessionSummary } from "../api/sessions/route";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { normalizeLayout } from "@/lib/normalizeLayout";
+import { RoomCardFooter } from "@/components/RoomCardFooter";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Which sessions have a post on the feed.
+ *
+ * A read across the workstream seam: `posts` belongs to the social layer and
+ * this page never writes to it. Worth the coupling, because deleting a
+ * published room leaves a card on a public page pointing at a design that no
+ * longer exists, and saying so before you confirm is the whole difference
+ * between a warning and a surprise.
+ *
+ * Degrades to "warn about nothing" if the read fails, rather than blocking the
+ * list — the room grid is the point of this page and does not depend on it.
+ */
+async function loadPublished(): Promise<Set<string>> {
+  const { data, error } = await supabaseAdmin().from("posts").select("session_id");
+  if (error || !data) return new Set();
+  return new Set(data.map((row) => row.session_id as string));
+}
 
 async function loadSessions(): Promise<SessionSummary[]> {
   // Queried directly rather than fetching this app's own /api/sessions. A
@@ -53,7 +72,7 @@ const navLink =
   "rounded-full px-3.5 py-2 text-sm text-[var(--fg-2)] transition-colors hover:bg-[var(--line-soft)] hover:text-[var(--fg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--amber)]";
 
 export default async function RoomsPage() {
-  const sessions = await loadSessions();
+  const [sessions, published] = await Promise.all([loadSessions(), loadPublished()]);
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
@@ -125,41 +144,57 @@ export default async function RoomsPage() {
         ) : (
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {sessions.map((s) => (
-              <li key={s.sessionId}>
+              // The card is a container rather than one big link, because the
+              // delete control cannot be nested inside an anchor. The link
+              // covers the part you click to open the room; the footer owns
+              // itself.
+              <li
+                key={s.sessionId}
+                className="group flex h-full flex-col rounded-2xl border border-[var(--line)] bg-[var(--raised)] transition-all duration-300 hover:-translate-y-1 hover:border-[var(--amber-line)] hover:shadow-[var(--shadow-lift)]"
+              >
                 <Link
                   href={`/room?session=${s.sessionId}`}
-                  className="group flex h-full flex-col justify-between rounded-2xl border border-[var(--line)] bg-[var(--raised)] p-5 transition-all duration-300 hover:-translate-y-1 hover:border-[var(--amber-line)] hover:shadow-[var(--shadow-lift)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--amber)]"
+                  className="flex flex-1 flex-col rounded-t-2xl px-5 pb-4 pt-5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--amber)]"
                 >
-                  <div>
-                    <div className="flex items-start justify-between gap-3">
-                      {/* The dimensions are the room's identity here — this
-                          product's whole claim is that they are measured, so
-                          they lead the card rather than a generic title. */}
-                      <span className="tb text-[15px] text-[var(--fg)] transition-colors group-hover:text-[var(--amber)]">
-                        {s.width.toFixed(1)} × {s.length.toFixed(1)} m
-                      </span>
+                  <div className="flex items-start justify-between gap-2">
+                    {/* The dimensions are the room's identity here — this
+                        product's whole claim is that they are measured, so
+                        they lead the card rather than a generic title. */}
+                    <span className="tb text-[15px] text-[var(--fg)] transition-colors group-hover:text-[var(--amber)]">
+                      {s.width.toFixed(1)} × {s.length.toFixed(1)} m
+                    </span>
+                    <span className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                      {published.has(s.sessionId) && (
+                        <span
+                          title="Published to the feed. Deleting this room leaves its post without a plan or a 3D link."
+                          className="tb rounded-full border border-[var(--line)] px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-[var(--fg-2)]"
+                        >
+                          Shared
+                        </span>
+                      )}
                       {s.hasPhotos && (
                         <span
                           title="Scanned with camera poses, so surfaces show real photographed pixels"
-                          className="tb shrink-0 rounded-full border border-[var(--amber-line)] bg-[var(--amber-wash)] px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-[var(--amber)]"
+                          className="tb rounded-full border border-[var(--amber-line)] bg-[var(--amber-wash)] px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-[var(--amber)]"
                         >
                           Photo
                         </span>
                       )}
-                    </div>
-                    {/* --fg-2 rather than --fg-3 on this surface: fg-3 lands
-                        at 4.08:1 on --raised, under the floor for text this
-                        small. The feed's cards use fg-2 here for the same
-                        reason. */}
-                    <p className="tb mt-2.5 text-[12px] leading-relaxed text-[var(--fg-2)]">
-                      {s.areaM2} m² · {s.height.toFixed(1)} m ceiling · {s.objectCount} objects
-                    </p>
+                    </span>
                   </div>
-                  <p className="tb mt-6 flex items-center justify-between gap-3 border-t border-[var(--line-soft)] pt-3.5 text-[11px] text-[var(--fg-2)]">
-                    <span>{s.sessionId.slice(0, 8)}</span>
-                    <span>{timeAgo(s.updatedAt)}</span>
+                  {/* --fg-2 rather than --fg-3 on this surface: fg-3 lands
+                      at 4.08:1 on --raised, under the floor for text this
+                      small. The feed's cards use fg-2 here for the same
+                      reason. */}
+                  <p className="tb mt-2.5 text-[12px] leading-relaxed text-[var(--fg-2)]">
+                    {s.areaM2} m² · {s.height.toFixed(1)} m ceiling · {s.objectCount} objects
                   </p>
                 </Link>
+                <RoomCardFooter
+                  session={s.sessionId}
+                  published={published.has(s.sessionId)}
+                  age={timeAgo(s.updatedAt)}
+                />
               </li>
             ))}
           </ul>

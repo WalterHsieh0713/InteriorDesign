@@ -71,3 +71,49 @@ export async function PUT(req: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
+
+/**
+ * Delete a scanned room.
+ *
+ *   DELETE /api/layout?session=<id>
+ *
+ * Removes the `rooms` row and nothing else, deliberately:
+ *
+ * - **Photos stay.** Anything uploaded under `room-photos/<session>/` is left
+ *   in Storage. Other layouts' `cameraFrames` can hold URLs into that folder,
+ *   and orphaned bytes are a cheaper problem than a layout that renders grey
+ *   because its projection source vanished.
+ * - **Posts stay.** `posts.session_id` is deliberately not a foreign key —
+ *   posts outlive designs (see SOCIAL_PLAN.md), so deleting a room must not
+ *   cascade away someone's stamps and comments. The cost is that a post for a
+ *   deleted room keeps its row while `/api/thumbnail/<session>` starts 404ing
+ *   and "Open in 3D" lands on the editor's not-found state. `/rooms` marks
+ *   published rooms and says so before you confirm.
+ *
+ * There is no auth on this route, which matches every other route in this app
+ * — but this is the first one that destroys data, so see the note in
+ * EDITOR_INTEGRATION.md before this is exposed anywhere that matters.
+ */
+export async function DELETE(req: NextRequest) {
+  const session = req.nextUrl.searchParams.get("session");
+
+  if (!session) {
+    return NextResponse.json({ error: "Missing session" }, { status: 400 });
+  }
+
+  // `count: "exact"` is what separates "deleted it" from "it was never there",
+  // which a bare delete cannot tell you — Postgres reports success either way.
+  const { error, count } = await supabaseAdmin()
+    .from("rooms")
+    .delete({ count: "exact" })
+    .eq("session_id", session);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  if (!count) {
+    return NextResponse.json({ error: "No layout for this session" }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true, session });
+}
