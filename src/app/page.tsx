@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 
 type Photo = { name: string; url: string; createdAt: string | null };
 
 export default function Home() {
+  const router = useRouter();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [captureUrl, setCaptureUrl] = useState<string | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [inferring, setInferring] = useState(false);
-  const [layoutJson, setLayoutJson] = useState<string | null>(null);
   const [inferError, setInferError] = useState<string | null>(null);
 
   // Generated client-side only, after mount — a UUID picked during SSR would
@@ -50,7 +51,6 @@ export default function Home() {
     if (!sessionId) return;
     setInferring(true);
     setInferError(null);
-    setLayoutJson(null);
     try {
       const res = await fetch("/api/infer-layout", {
         method: "POST",
@@ -61,10 +61,9 @@ export default function Home() {
       if (!res.ok) {
         throw new Error(data.error || "Layout inference failed");
       }
-      setLayoutJson(JSON.stringify(data, null, 2));
+      router.push(`/room?session=${sessionId}`);
     } catch (err) {
       setInferError(err instanceof Error ? err.message : "Layout inference failed");
-    } finally {
       setInferring(false);
     }
   }
@@ -113,12 +112,6 @@ export default function Home() {
       )}
 
       {inferError && <p className="text-red-500 text-sm max-w-md">{inferError}</p>}
-
-      {layoutJson && (
-        <pre className="text-left text-xs bg-gray-100 rounded p-4 max-w-2xl w-full overflow-auto max-h-96">
-          {layoutJson}
-        </pre>
-      )}
     </main>
   );
 }

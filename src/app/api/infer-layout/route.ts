@@ -192,5 +192,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const { error: saveError } = await supabase
+    .from("rooms")
+    .upsert({ session_id: session, layout: result.data, updated_at: new Date().toISOString() });
+
+  if (saveError) {
+    return NextResponse.json(
+      { error: `Inferred layout but failed to save it: ${saveError.message}` },
+      { status: 500 }
+    );
+  }
+
   return NextResponse.json(result.data);
 }
