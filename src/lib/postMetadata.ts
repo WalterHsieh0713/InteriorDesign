@@ -133,4 +133,7 @@ export type Post = {
   total_budget_cents: number | null;
   object_count: number;
   like_count: number;
+  comment_count: number;
+  /** A 3D capture when the editor produces one; null falls back to the plan. */
+  render_url: string | null;
 };

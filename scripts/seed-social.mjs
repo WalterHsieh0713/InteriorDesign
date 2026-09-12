@@ -118,6 +118,20 @@ const STYLE_POOL = [
   "scandi", "cluttered", "bright", "monochrome", "plants",
 ];
 
+/**
+ * A few real-sounding exchanges, so the comment thread is not an empty box
+ * during a demo. Questions rather than praise: "how did you fit that in" is
+ * the conversation this app is actually for.
+ */
+const COMMENT_BODIES = [
+  "how did you get a desk in there without blocking the window?",
+  "what are the dimensions on that shelf? mine is a similar width",
+  "the layout makes way more sense with the sofa off the wall",
+  "did the scan pick up the radiator or did you move it manually?",
+  "stealing this. my room is almost exactly this size",
+  "curious what you did about the door swing on the left",
+];
+
 const CAPTIONS = [
   "first scan of the new place",
   "finally got the layout right",
@@ -247,8 +261,39 @@ if (likeRows.length > 0) {
   }
 }
 
+// Comments on a subset. A feed where every plan has the same number of
+// comments looks generated, which it is, but there is no need to advertise it.
+const commentRows = [];
+inserted.forEach((post, i) => {
+  const howMany = i % 3 === 0 ? 2 : i % 3 === 1 ? 1 : 0;
+  for (let n = 0; n < howMany; n++) {
+    commentRows.push({
+      post_id: post.id,
+      author_handle: HANDLES[(i + n + 3) % HANDLES.length],
+      device_id: `seed-device-${n}`,
+      body: COMMENT_BODIES[(i * 2 + n) % COMMENT_BODIES.length],
+    });
+  }
+});
+
+if (commentRows.length > 0) {
+  await rest("post_comments", { method: "POST", body: JSON.stringify(commentRows) });
+
+  // Keep the denormalized counter honest, the way the API route does.
+  const tally = {};
+  for (const row of commentRows) tally[row.post_id] = (tally[row.post_id] ?? 0) + 1;
+  for (const [postId, count] of Object.entries(tally)) {
+    await rest(`posts?id=eq.${postId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ comment_count: count }),
+    });
+  }
+}
+
+
 console.log(`\nSeeded ${inserted.length} post(s) from ${rooms.length} real layout(s).`);
 console.log(`  ${likeRows.length} like(s) inserted so the counters are backed by real rows.\n`);
+console.log(`  ${commentRows.length} comment(s) seeded across the feed.`);
 
 const byType = {};
 for (const p of posts) byType[p.room_type] = (byType[p.room_type] ?? 0) + 1;

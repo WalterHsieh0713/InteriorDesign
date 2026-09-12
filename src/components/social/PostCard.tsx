@@ -40,7 +40,7 @@ export function PostCard({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={post.thumbnail_url}
+          src={post.render_url ?? post.thumbnail_url}
           alt={`Floor plan of a ${post.room_type}, ${formatArea(post.area_m2)}`}
           className="aspect-square w-full bg-[var(--paper)] object-cover"
           loading="lazy"
@@ -64,7 +64,12 @@ export function PostCard({
           {post.caption && (
             <p className="truncate text-sm leading-snug">{post.caption}</p>
           )}
-          <p className="tb text-[11px] text-[var(--pencil)]">@{post.author_handle}</p>
+          <p className="tb text-[11px] text-[var(--pencil)]">
+            @{post.author_handle}
+            {post.comment_count > 0 && (
+              <span> · {post.comment_count} {post.comment_count === 1 ? "comment" : "comments"}</span>
+            )}
+          </p>
         </div>
 
         {/* Drawing sets get stamped when they're approved. A red rubber

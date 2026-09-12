@@ -18,8 +18,8 @@ share, adds a caption and a room type, and it appears in a grid other people
 can filter, sort and stamp (our word for like). Each card shows a top-down
 floor plan generated from the layout JSON.
 
-It is live and working against the shared Supabase project, seeded with 14
-posts built from the real layouts already in `rooms`.
+It is live and working against the shared Supabase project, seeded from the
+real layouts already in `rooms` — so the post count grows as you add scans.
 
 ---
 
@@ -95,12 +95,14 @@ src/lib/retry.ts                     retry Supabase through transient gateway er
 src/app/api/feed/route.ts            the feed query
 src/app/api/posts/route.ts           publish
 src/app/api/posts/[id]/like/route.ts stamp / unstamp
+src/app/api/posts/[id]/comments/    comment thread
 src/app/api/thumbnail/[session]/     floor plan as an image
 src/app/feed/                        the grid
 src/app/share/                       the composer
 src/app/p/[id]/                      a single post
 src/components/social/               all of our UI
 scripts/create-social-tables.sql     posts + post_likes
+scripts/create-comments-table.sql    post_comments + comment_count + render_url
 scripts/seed-social.mjs              seed from real layouts
 ```
 
@@ -120,7 +122,7 @@ need to change our block, that is fine, just keep the scoping.
 
 ### Database
 
-We added `posts` and `post_likes`. We did not alter `rooms`. Both new tables
+We added `posts`, `post_likes` and `post_comments`. We did not alter `rooms`. Both new tables
 have RLS enabled with zero policies, matching how `rooms` is set up: all
 access goes through API routes on the service-role key.
 
@@ -143,9 +145,11 @@ budget filter hidden, because a filter that always returns nothing reads as
 broken.
 
 **2. A 3D thumbnail at save time.** `gl.domElement.toBlob()`, square,
-1024×1024, uploaded like a photo. Give us the URL and we will store it in
-`posts.thumbnail_url` instead of the floor-plan route. Genuinely optional —
-the SVG plans look good and are arguably more legible in a small card.
+1024×1024, uploaded like a photo. Write the URL to `posts.render_url` and it
+takes over immediately — the card and the post page already resolve
+`render_url ?? thumbnail_url`, so the floor plan becomes the fallback with no
+change on our side. Genuinely optional: the SVG plans look good and are
+arguably more legible at card size.
 
 ---
 
@@ -165,12 +169,14 @@ Worth knowing regardless of which half you work on.
   in one afternoon, once mid-publish, which surfaced to the user as a failed
   post for a perfectly valid request. `src/lib/retry.ts` wraps our calls.
   Consider it for yours — `/api/layout` writes on every drag.
-- **`npm run build` does not run lint.** `npm run lint` reports two
-  pre-existing `react-hooks/set-state-in-effect` errors in `page.tsx:21` and
-  `RoomScene.tsx:187`, both in your files. They are not ours and we have not
-  touched them, but they will keep failing lint until someone does. The fix
-  pattern that worked for us: read external state with `useSyncExternalStore`,
-  and derive loading flags instead of storing them.
+- **`npm run build` does not run lint** — run `npm run lint` separately. It
+  is at zero errors now, including the two `react-hooks/set-state-in-effect`
+  ones that used to sit in `page.tsx` and `RoomScene.tsx`. Please keep it
+  there: a permanently-red lint means nobody reads it and new problems hide.
+  The two patterns that fixed those: read external state (localStorage, a
+  lazily-created id) through `useSyncExternalStore` rather than copying it
+  into state in an effect, and adjust state during render instead of in an
+  effect when it derives from a prop.
 
 ---
 
@@ -210,3 +216,39 @@ has to be visited by hand. The budget filter is hidden pending bindings. Seed
 data assigns plausible room types to LiDAR scans that give nothing to infer
 from — that is fabrication, acceptable only because it exists to exercise the
 filters.
+
+### v2 — 2026-09-12 — filters, tabs, comments
+
+**Filters** collapsed behind one button with an active count — a popover on
+desktop, a bottom sheet on phones. They previously sat inline and wrapped
+onto three rows on a small screen, crowding the plans they existed to help
+you find.
+
+**Tabs** cut from five to three: For You · This month · All time. Today and
+This week held too few plans to rank meaningfully. `/api/feed` still accepts
+both values, so an existing link keeps working.
+
+**Comments** shipped. `post_comments`, plus `comment_count` and `render_url`
+on `posts` — see `scripts/create-comments-table.sql`. Threads live on the
+post page, attribution reuses the same pseudonymous handle as the composer,
+and `device_id` lets someone delete their own comment without an account.
+`device_id` is never returned to the client; it is collapsed to a `mine`
+boolean, or anyone could delete anyone's comment. A delete from the wrong
+device matches no rows and reports success rather than revealing that the
+comment exists.
+
+**`render_url` is the hook for your 3D thumbnails.** Both the card and the
+post page already resolve `render_url ?? thumbnail_url`, so the moment you
+start writing a capture URL there, it takes over and the floor plan becomes
+the fallback. Nothing on our side needs to change.
+
+**Known limits.** Anyone can type any handle, so comments carry no real
+attribution — that is the accepted ceiling of the no-accounts decision, and
+the fix is real accounts rather than a patch. There is no moderation UI; the
+`hidden` column exists so a row can be suppressed by hand in the SQL editor.
+
+**Not built, deliberately:** similarity-ranked "For You", `/u/[handle]`
+profiles, saves, and auto-tagging. Auto-tagging looks feasible from layout
+data alone (object density, colour variance, area) but not from imagery —
+LiDAR sessions upload no photos at all, so a vision approach would tag half
+the feed and silently skip the rest.
