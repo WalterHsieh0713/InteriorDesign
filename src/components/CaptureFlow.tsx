@@ -2,14 +2,11 @@
 
 import { useState } from "react";
 
-const SLOTS = [
-  "Corner 1 — stand in a corner and capture as much of the room as you can",
-  "Corner 2 — move to the opposite corner",
-  "Corner 3 — a third corner or angle",
-  "Corner 4 — the last corner or angle",
-];
-
-type SlotStatus = "empty" | "uploading" | "done" | "error";
+type PhotoItem = {
+  id: string;
+  status: "uploading" | "done" | "error";
+  preview: string;
+};
 
 // Vercel's free-tier serverless functions cap request bodies at 4.5MB, and
 // full-res phone photos routinely exceed that — so resize before upload.
@@ -36,73 +33,102 @@ async function resizeImage(file: File, maxDim = 1600, quality = 0.82): Promise<B
   );
 }
 
+// No cap on photo count here or in /api/infer-layout (which sends every
+// photo found for the session to Gemini) — more angles measurably improves
+// the inferred layout's accuracy, so the only limit is how many the person
+// is willing to take. 4 is just the floor for reasonable wall coverage.
+const MIN_RECOMMENDED = 4;
+
 export default function CaptureFlow({ sessionId }: { sessionId: string }) {
-  const [statuses, setStatuses] = useState<SlotStatus[]>(SLOTS.map(() => "empty"));
-  const [previews, setPreviews] = useState<(string | null)[]>(SLOTS.map(() => null));
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
 
-  async function handleFile(index: number, file: File | undefined) {
-    if (!file) return;
+  function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
 
-    setStatuses((s) => s.map((v, i) => (i === index ? "uploading" : v)));
+    // Each selected file uploads independently, so one slow/failed photo
+    // never blocks the rest — and a phone gallery picker that returns
+    // several files at once (multiple) still works.
+    Array.from(files).forEach((file) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      setPhotos((p) => [...p, { id, status: "uploading", preview: URL.createObjectURL(file) }]);
+      uploadOne(id, file);
+    });
+  }
 
+  async function uploadOne(id: string, file: File) {
     try {
       const resized = await resizeImage(file);
-      setPreviews((p) => p.map((v, i) => (i === index ? URL.createObjectURL(resized) : v)));
+      setPhotos((p) =>
+        p.map((item) => (item.id === id ? { ...item, preview: URL.createObjectURL(resized) } : item))
+      );
 
       const formData = new FormData();
       formData.append("session", sessionId);
-      formData.append("file", resized, `photo-${index}.jpg`);
+      // The server assigns its own storage path (crypto.randomUUID()) — this
+      // filename is only ever used for its content-type-ish extension hint.
+      formData.append("file", resized, "photo.jpg");
 
       const res = await fetch("/api/upload", { method: "POST", body: formData });
       if (!res.ok) throw new Error("Upload failed");
 
-      setStatuses((s) => s.map((v, i) => (i === index ? "done" : v)));
+      setPhotos((p) => p.map((item) => (item.id === id ? { ...item, status: "done" } : item)));
     } catch (err) {
       console.error(err);
-      setStatuses((s) => s.map((v, i) => (i === index ? "error" : v)));
+      setPhotos((p) => p.map((item) => (item.id === id ? { ...item, status: "error" } : item)));
     }
   }
 
-  const allDone = statuses.every((s) => s === "done");
+  const doneCount = photos.filter((p) => p.status === "done").length;
+  const uploadingCount = photos.filter((p) => p.status === "uploading").length;
+  const hasEnough = doneCount >= MIN_RECOMMENDED;
 
   return (
     <div className="flex flex-col gap-4 w-full max-w-sm">
-      {SLOTS.map((label, i) => (
-        <label
-          key={i}
-          className="flex items-center gap-3 border rounded-lg p-3 cursor-pointer active:bg-gray-50"
-        >
-          <div className="w-16 h-16 flex-shrink-0 bg-gray-100 rounded overflow-hidden flex items-center justify-center">
-            {previews[i] ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={previews[i]!} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-xs text-gray-400">
-                {statuses[i] === "uploading" ? "…" : i + 1}
-              </span>
-            )}
-          </div>
-          <div className="flex-1 text-sm">
-            <div>{label}</div>
-            <div className="text-xs text-gray-400">
-              {statuses[i] === "done" && "Uploaded"}
-              {statuses[i] === "uploading" && "Uploading…"}
-              {statuses[i] === "error" && "Failed — tap to retry"}
-              {statuses[i] === "empty" && "Tap to take photo"}
+      <label className="flex items-center justify-center gap-2 border-2 border-dashed rounded-lg p-6 cursor-pointer active:bg-gray-50 text-sm font-medium">
+        + Add photo{photos.length > 0 ? "s" : ""}
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            handleFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+      </label>
+
+      <p className="text-xs text-gray-500 text-center">
+        {doneCount} photo{doneCount === 1 ? "" : "s"} uploaded
+        {uploadingCount > 0 && ` — ${uploadingCount} uploading…`}
+        {!hasEnough && ` — take at least ${MIN_RECOMMENDED}, more angles means better accuracy`}
+      </p>
+
+      {photos.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {photos.map((p) => (
+            <div key={p.id} className="relative aspect-square bg-gray-100 rounded overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={p.preview} alt="" className="w-full h-full object-cover" />
+              {p.status === "uploading" && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/30 text-white text-xs">
+                  …
+                </div>
+              )}
+              {p.status === "error" && (
+                <div className="absolute inset-0 flex items-center justify-center bg-red-600/70 text-white text-xs">
+                  failed
+                </div>
+              )}
             </div>
-          </div>
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(e) => handleFile(i, e.target.files?.[0])}
-          />
-        </label>
-      ))}
-      {allDone && (
-        <p className="text-center text-green-600 font-medium">
-          All 4 photos uploaded — check your laptop.
+          ))}
+        </div>
+      )}
+
+      {hasEnough && uploadingCount === 0 && (
+        <p className="text-center text-green-600 font-medium text-sm">
+          {doneCount} photos uploaded — check your laptop, or keep adding more for better accuracy.
         </p>
       )}
     </div>

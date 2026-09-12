@@ -7,6 +7,7 @@ import * as THREE from "three";
 import type { RoomLayout } from "@/lib/roomLayoutSchema";
 import FurnitureMesh from "./FurnitureMesh";
 import { getTexture, type TextureKind } from "./textures";
+import { prepareCameras, bakePlaneTexture, type PreparedCamera } from "./projectiveTexture";
 
 // Plausible real-furniture tones, used only when we have no sampled color
 // for an object. The previous palette was a categorical data-viz set — lime
@@ -16,12 +17,18 @@ const CATEGORY_COLORS: Record<string, string> = {
   bed: "#b9bec7",
   desk: "#a97a5a",
   chair: "#c8a06a",
+  stool: "#b98a55",
   sofa: "#8b8f98",
   table: "#b08a5e",
   shelf: "#9c7b55",
   dresser: "#8f6b4a",
+  nightstand: "#8a6b4d",
+  ottoman: "#8c7a6a",
   tv: "#1b1d20",
+  monitor: "#1c1e21",
   lamp: "#e8dcc4",
+  mirror: "#cfd6d8",
+  plant: "#4f7942",
   rug: "#9a938a",
   door: "#7a5638",
   window: "#aecbd8",
@@ -67,7 +74,7 @@ class EnvironmentBoundary extends Component<{ children: ReactNode }, { failed: b
   }
 }
 
-function Walls({ room }: { room: RoomLayout["room"] }) {
+function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedCamera[] }) {
   const { width, length, height } = room;
   const wallColor = room.wallColor ?? "#d8d4cd";
   const floorColor = room.floorColor ?? "#9c968d";
@@ -82,58 +89,150 @@ function Walls({ room }: { room: RoomLayout["room"] }) {
   );
   const wallMap = useMemo(() => getTexture("plaster", 6), []);
 
-  // Walls stay translucent so you can see in from outside while orbiting,
-  // and single-sided from inside so the near wall doesn't block the view.
-  const wall = (
-    <meshStandardMaterial
-      color={wallColor}
-      map={wallMap}
-      side={THREE.DoubleSide}
-      transparent
-      opacity={0.4}
-      roughness={0.95}
-    />
+  // Real captured photos projected onto each surface when the LiDAR path
+  // recorded camera poses (see projectiveTexture.ts). `cameras` is empty for
+  // every other session, in which case each of these is just null and the
+  // procedural map/flat color below renders exactly as it did before.
+  const floorPhoto = useMemo(
+    () =>
+      bakePlaneTexture(
+        {
+          center: new THREE.Vector3(0, 0, 0),
+          xAxis: new THREE.Vector3(width, 0, 0),
+          yAxis: new THREE.Vector3(0, 0, -length),
+          normal: new THREE.Vector3(0, 1, 0),
+          fallbackColor: floorColor,
+          resolution: 192,
+        },
+        cameras
+      ),
+    [cameras, width, length, floorColor]
   );
+  const backWallPhoto = useMemo(
+    () =>
+      bakePlaneTexture(
+        {
+          center: new THREE.Vector3(0, height / 2, -length / 2),
+          xAxis: new THREE.Vector3(width, 0, 0),
+          yAxis: new THREE.Vector3(0, height, 0),
+          normal: new THREE.Vector3(0, 0, 1),
+          fallbackColor: wallColor,
+          resolution: 192,
+        },
+        cameras
+      ),
+    [cameras, width, height, length, wallColor]
+  );
+  const frontWallPhoto = useMemo(
+    () =>
+      bakePlaneTexture(
+        {
+          center: new THREE.Vector3(0, height / 2, length / 2),
+          xAxis: new THREE.Vector3(-width, 0, 0),
+          yAxis: new THREE.Vector3(0, height, 0),
+          normal: new THREE.Vector3(0, 0, -1),
+          fallbackColor: wallColor,
+          resolution: 192,
+        },
+        cameras
+      ),
+    [cameras, width, height, length, wallColor]
+  );
+  const rightWallPhoto = useMemo(
+    () =>
+      bakePlaneTexture(
+        {
+          center: new THREE.Vector3(width / 2, height / 2, 0),
+          xAxis: new THREE.Vector3(0, 0, length),
+          yAxis: new THREE.Vector3(0, height, 0),
+          normal: new THREE.Vector3(-1, 0, 0),
+          fallbackColor: wallColor,
+          resolution: 192,
+        },
+        cameras
+      ),
+    [cameras, width, height, length, wallColor]
+  );
+  const leftWallPhoto = useMemo(
+    () =>
+      bakePlaneTexture(
+        {
+          center: new THREE.Vector3(-width / 2, height / 2, 0),
+          xAxis: new THREE.Vector3(0, 0, -length),
+          yAxis: new THREE.Vector3(0, height, 0),
+          normal: new THREE.Vector3(1, 0, 0),
+          fallbackColor: wallColor,
+          resolution: 192,
+        },
+        cameras
+      ),
+    [cameras, width, height, length, wallColor]
+  );
+
+  // A flat guessed wall color stays translucent so you can still see inside
+  // while orbiting from outside — but a wall showing real captured pixels is
+  // worth looking at directly, so it goes near-opaque instead.
+  const wallOpacity = cameras.length > 0 ? 0.92 : 0.4;
+
+  function wallMaterial(photo: THREE.CanvasTexture | null) {
+    return (
+      <meshStandardMaterial
+        color={photo ? "#ffffff" : wallColor}
+        map={photo ?? wallMap}
+        side={THREE.DoubleSide}
+        transparent
+        opacity={wallOpacity}
+        roughness={photo ? 0.85 : 0.95}
+      />
+    );
+  }
 
   return (
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[width, length]} />
         <meshStandardMaterial
-          color={floorColor}
-          map={floorMap}
+          color={floorPhoto ? "#ffffff" : floorColor}
+          map={floorPhoto ?? floorMap}
           side={THREE.DoubleSide}
-          roughness={floorRoughness}
+          roughness={floorPhoto ? 0.75 : floorRoughness}
         />
       </mesh>
       <mesh position={[0, height / 2, -length / 2]} receiveShadow>
         <planeGeometry args={[width, height]} />
-        {wall}
+        {wallMaterial(backWallPhoto)}
       </mesh>
       <mesh position={[0, height / 2, length / 2]} rotation={[0, Math.PI, 0]} receiveShadow>
         <planeGeometry args={[width, height]} />
-        {wall}
+        {wallMaterial(frontWallPhoto)}
       </mesh>
       <mesh position={[width / 2, height / 2, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
         <planeGeometry args={[length, height]} />
-        {wall}
+        {wallMaterial(rightWallPhoto)}
       </mesh>
       <mesh position={[-width / 2, height / 2, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
         <planeGeometry args={[length, height]} />
-        {wall}
+        {wallMaterial(leftWallPhoto)}
       </mesh>
     </group>
   );
 }
 
+// Lamps are the one category that's plausibly an actual light source in the
+// room, not just something lit by it — without this every render only ever
+// has the one overhead sun-like light, no matter how many lamps are in shot.
+const LAMP_LIGHT_COLOR = "#ffd9a0";
+
 function DraggableObject({
   obj,
   isDragging,
   onDragStart,
+  cameras,
 }: {
   obj: RoomLayout["objects"][number];
   isDragging: boolean;
   onDragStart: (id: string, y: number) => void;
+  cameras: PreparedCamera[];
 }) {
   const [, h] = obj.dimensions;
   // The object's own sampled color when we have one — that's what makes a
@@ -151,7 +250,18 @@ function DraggableObject({
         onDragStart(obj.id, obj.position[1]);
       }}
     >
-      <FurnitureMesh category={obj.category} dimensions={obj.dimensions} color={color} opacity={isDragging ? 0.6 : 1} />
+      <FurnitureMesh
+        category={obj.category}
+        dimensions={obj.dimensions}
+        color={color}
+        opacity={isDragging ? 0.6 : 1}
+        cameras={cameras}
+        objectPosition={obj.position}
+        objectRotationY={obj.rotationY}
+      />
+      {obj.category === "lamp" && (
+        <pointLight position={[0, h * 0.3, 0]} color={LAMP_LIGHT_COLOR} intensity={2.5} distance={4} decay={2} />
+      )}
       <Html position={[0, h / 2 + 0.15, 0]} center distanceFactor={8} style={{ pointerEvents: "none" }}>
         <div
           style={{
@@ -172,9 +282,11 @@ function DraggableObject({
 
 function Scene({
   layout,
+  cameras,
   onPositionsSettled,
 }: {
   layout: RoomLayout;
+  cameras: PreparedCamera[];
   onPositionsSettled: (objects: RoomLayout["objects"]) => void;
 }) {
   const [objects, setObjects] = useState(layout.objects);
@@ -183,6 +295,7 @@ function Scene({
   const dragPlane = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0));
   const intersection = useRef(new THREE.Vector3());
   const { camera, raycaster, gl } = useThree();
+  const lightColor = layout.room.lightColor ?? "#ffffff";
 
   useEffect(() => setObjects(layout.objects), [layout]);
 
@@ -243,10 +356,14 @@ function Scene({
           <Environment preset="apartment" />
         </Suspense>
       </EnvironmentBoundary>
-      <ambientLight intensity={0.25} />
+      {/* Tinted by the room's own estimated light color (warm bulb vs.
+          daylight) instead of flat white — an incandescent-lit room and a
+          daylit one shouldn't come out looking identically lit. */}
+      <ambientLight intensity={0.25} color={lightColor} />
       <directionalLight
         position={[layout.room.width, layout.room.height * 3, layout.room.length]}
         intensity={1.7}
+        color={lightColor}
         castShadow
         shadow-mapSize={[1024, 1024]}
         shadow-camera-left={-layout.room.width}
@@ -255,13 +372,23 @@ function Scene({
         shadow-camera-bottom={-layout.room.length}
         shadow-camera-far={layout.room.height * 8}
       />
-      <Walls room={layout.room} />
+      {/* A single directional light leaves everything on its far side in
+          flat, unlit shadow. This is real bounce light in any real room —
+          a cheap, shadowless fill from the opposite corner reads much
+          closer to how the room actually looks than one hard sun. */}
+      <directionalLight
+        position={[-layout.room.width, layout.room.height * 1.2, -layout.room.length]}
+        intensity={0.45}
+        color={lightColor}
+      />
+      <Walls room={layout.room} cameras={cameras} />
       {objects.map((obj) => (
         <DraggableObject
           key={obj.id}
           obj={obj}
           isDragging={draggingId === obj.id}
           onDragStart={handleDragStart}
+          cameras={cameras}
         />
       ))}
       <OrbitControls enabled={!draggingId} makeDefault />
@@ -298,6 +425,7 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
   // remounting the whole Canvas on restore is the reliable way back to a
   // working scene instead of a half-recovered black one.
   const [canvasKey, setCanvasKey] = useState(0);
+  const [cameras, setCameras] = useState<PreparedCamera[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -316,6 +444,25 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
       cancelled = true;
     };
   }, [sessionId]);
+
+  // Downloads and decodes every captured photo once per session, not once
+  // per drag — `layout.cameraFrames` keeps the same array reference across
+  // handlePositionsSettled's updates (it only ever spreads `objects` in),
+  // so this doesn't refire on every drag save.
+  useEffect(() => {
+    let cancelled = false;
+    const frames = layout?.cameraFrames;
+    if (!frames?.length) {
+      setCameras([]);
+      return;
+    }
+    prepareCameras(frames).then((prepared) => {
+      if (!cancelled) setCameras(prepared);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [layout?.cameraFrames]);
 
   const handlePositionsSettled = useCallback(
     async (objects: RoomLayout["objects"]) => {
@@ -386,7 +533,7 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           });
         }}
       >
-        <Scene layout={layout} onPositionsSettled={handlePositionsSettled} />
+        <Scene layout={layout} cameras={cameras} onPositionsSettled={handlePositionsSettled} />
       </Canvas>
     </div>
   );

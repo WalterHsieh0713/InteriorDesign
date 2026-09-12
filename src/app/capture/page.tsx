@@ -20,8 +20,9 @@ export default async function CapturePage({ searchParams }: CapturePageProps) {
     <main className="min-h-screen flex flex-col items-center gap-6 p-8 pt-12">
       <h1 className="text-2xl font-bold">Capture Room Photos</h1>
       <p className="text-sm text-gray-500 text-center max-w-sm">
-        Take 4 photos from different corners of the room, covering as many
-        walls as possible.
+        Take as many photos as you can from different corners and angles —
+        covering every wall and piece of furniture. More photos means better
+        accuracy, so keep going past the minimum if you can.
       </p>
       <CaptureFlow sessionId={session} />
     </main>

@@ -1,0 +1,1 @@
+do the scoped-down version to project sampled photos, but can you do that for the furniture too? also yes do the lighting improvements, send way more than just 16 photos for increased accuracy (just send all if theres no big issue) also IF POSSIBLE add more objects, so far its limited to a small set of chair, table, window, etc, add a bit more like stools, monitors, tvs, etc

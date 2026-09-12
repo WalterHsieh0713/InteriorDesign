@@ -22,6 +22,10 @@ Estimate:
    - floorMaterial: one of exactly: ${SURFACE_MATERIALS.join(", ")}.
    Correct for lighting: report the surface's own color in neutral light,
    not the color a shadowed or warmly-lit photo happens to show.
+   - lightColor: the opposite correction — the actual tint of the room's
+     light sources themselves, as #rrggbb (warm incandescent/tungsten bulbs
+     read amber/orange, cool daylight or LED reads white-to-blue). Omit this
+     one field if you can't tell.
 3. Every distinct piece of furniture or fixture you can actually identify
    across the photos (don't invent objects you can't see).
 
@@ -56,6 +60,7 @@ const RESPONSE_SCHEMA = {
         floorColor: { type: Type.STRING },
         ceilingColor: { type: Type.STRING },
         floorMaterial: { type: Type.STRING, enum: [...SURFACE_MATERIALS] },
+        lightColor: { type: Type.STRING },
       },
       required: ["width", "length", "height", "wallColor", "floorColor", "floorMaterial"],
     },
