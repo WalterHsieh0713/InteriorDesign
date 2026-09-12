@@ -65,7 +65,12 @@ export function PostCard({
             <p className="truncate text-sm leading-snug">{post.caption}</p>
           )}
           <p className="tb text-[11px] text-[var(--pencil)]">
-            @{post.author_handle}
+            <Link
+              href={`/u/${encodeURIComponent(post.author_handle)}`}
+              className="hover:text-[var(--blueline)] hover:underline"
+            >
+              @{post.author_handle}
+            </Link>
             {post.comment_count > 0 && (
               <span> · {post.comment_count} {post.comment_count === 1 ? "comment" : "comments"}</span>
             )}

@@ -72,7 +72,13 @@ export default async function PostPage({ params }: PageProps<"/p/[id]">) {
           <div>
             {post.caption && <p className="text-base leading-snug">{post.caption}</p>}
             <p className="tb mt-2 text-[12px] text-[var(--pencil)]">
-              @{post.author_handle} ·{" "}
+              <Link
+                href={`/u/${encodeURIComponent(post.author_handle)}`}
+                className="hover:text-[var(--blueline)] hover:underline"
+              >
+                @{post.author_handle}
+              </Link>{" "}
+              ·{" "}
               {new Date(post.created_at).toLocaleDateString("en-US", {
                 month: "short",
                 day: "numeric",

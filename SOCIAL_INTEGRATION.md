@@ -100,6 +100,8 @@ src/app/api/thumbnail/[session]/     floor plan as an image
 src/app/feed/                        the grid
 src/app/share/                       the composer
 src/app/p/[id]/                      a single post
+src/app/u/[handle]/                  one person's plans
+src/lib/similarity.ts                ranking rooms by resemblance
 src/components/social/               all of our UI
 scripts/create-social-tables.sql     posts + post_likes
 scripts/create-comments-table.sql    post_comments + comment_count + render_url
@@ -270,7 +272,7 @@ rooms. Today it is buried in an area-band dropdown.
       object density. Candidates are pre-filtered in SQL to a generous area
       band and scored in TypeScript — at this volume that is simpler and far
       easier to tune than pushing weights into Postgres.
-- [ ] **3b — `/u/[handle]` profile page.** `author_handle` is already on
+- [x] **3b — DONE.** `/u/[handle]` profile page, linked from every byline. `author_handle` is already on
       every post, so this is one query. It turns a wall of plans into a set
       of people, which is the part of "community" that is currently missing
       entirely. Link it from the card byline and the post page.
