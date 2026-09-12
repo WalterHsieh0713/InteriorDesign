@@ -63,6 +63,35 @@ const RESPONSE_SCHEMA = {
   required: ["room", "objects"],
 };
 
+function isRetryableGeminiError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  // Transient overload, e.g. {"error":{"code":503,"status":"UNAVAILABLE",...}}
+  // or 429 RESOURCE_EXHAUSTED — worth a short backoff-and-retry. Anything
+  // else (bad request, auth, schema issues) should fail immediately.
+  return /"code":\s*(429|503)/.test(message) || /UNAVAILABLE|RESOURCE_EXHAUSTED/.test(message);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function generateWithRetry(
+  ai: GoogleGenAI,
+  params: Parameters<typeof ai.models.generateContent>[0],
+  attempts = 3
+) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (err) {
+      const isLastAttempt = attempt === attempts - 1;
+      if (isLastAttempt || !isRetryableGeminiError(err)) throw err;
+      await sleep(1000 * 2 ** attempt); // 1s, then 2s
+    }
+  }
+  throw new Error("unreachable");
+}
+
 async function fetchImageAsInlinePart(url: string) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch photo: ${url}`);
@@ -125,7 +154,7 @@ export async function POST(req: NextRequest) {
 
   let responseText: string | undefined;
   try {
-    const response = await ai.models.generateContent({
+    const response = await generateWithRetry(ai, {
       model: MODEL,
       contents: [{ role: "user", parts: [{ text: PROMPT }, ...imageParts] }],
       config: {
