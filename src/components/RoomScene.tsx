@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
-import { OrbitControls, Html } from "@react-three/drei";
+import { OrbitControls, Html, Environment, SoftShadows } from "@react-three/drei";
 import * as THREE from "three";
 import type { RoomLayout } from "@/lib/roomLayoutSchema";
 import FurnitureMesh from "./FurnitureMesh";
@@ -23,28 +23,56 @@ const CATEGORY_COLORS: Record<string, string> = {
   other: "#adb5bd",
 };
 
-function Walls({ width, length, height }: { width: number; length: number; height: number }) {
+// How rough each floor material reads under light — carpet swallows
+// highlights, tile bounces them.
+const FLOOR_ROUGHNESS: Record<string, number> = {
+  carpet: 1,
+  wood: 0.6,
+  tile: 0.25,
+  concrete: 0.9,
+  vinyl: 0.5,
+  other: 0.8,
+};
+
+function Walls({ room }: { room: RoomLayout["room"] }) {
+  const { width, length, height } = room;
+  const wallColor = room.wallColor ?? "#dcdcdc";
+  const floorColor = room.floorColor ?? "#f1f1f1";
+  const floorRoughness = FLOOR_ROUGHNESS[room.floorMaterial ?? "other"] ?? 0.8;
+
+  // Walls stay translucent so you can see in from outside while orbiting,
+  // and single-sided from inside so the near wall doesn't block the view.
+  const wall = (
+    <meshStandardMaterial
+      color={wallColor}
+      side={THREE.DoubleSide}
+      transparent
+      opacity={0.4}
+      roughness={0.9}
+    />
+  );
+
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[width, length]} />
-        <meshStandardMaterial color="#f1f1f1" side={THREE.DoubleSide} />
+        <meshStandardMaterial color={floorColor} side={THREE.DoubleSide} roughness={floorRoughness} />
       </mesh>
-      <mesh position={[0, height / 2, -length / 2]}>
+      <mesh position={[0, height / 2, -length / 2]} receiveShadow>
         <planeGeometry args={[width, height]} />
-        <meshStandardMaterial color="#dcdcdc" side={THREE.DoubleSide} transparent opacity={0.35} />
+        {wall}
       </mesh>
-      <mesh position={[0, height / 2, length / 2]} rotation={[0, Math.PI, 0]}>
+      <mesh position={[0, height / 2, length / 2]} rotation={[0, Math.PI, 0]} receiveShadow>
         <planeGeometry args={[width, height]} />
-        <meshStandardMaterial color="#dcdcdc" side={THREE.DoubleSide} transparent opacity={0.35} />
+        {wall}
       </mesh>
-      <mesh position={[width / 2, height / 2, 0]} rotation={[0, -Math.PI / 2, 0]}>
+      <mesh position={[width / 2, height / 2, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
         <planeGeometry args={[length, height]} />
-        <meshStandardMaterial color="#dcdcdc" side={THREE.DoubleSide} transparent opacity={0.35} />
+        {wall}
       </mesh>
-      <mesh position={[-width / 2, height / 2, 0]} rotation={[0, Math.PI / 2, 0]}>
+      <mesh position={[-width / 2, height / 2, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
         <planeGeometry args={[length, height]} />
-        <meshStandardMaterial color="#dcdcdc" side={THREE.DoubleSide} transparent opacity={0.35} />
+        {wall}
       </mesh>
     </group>
   );
@@ -60,7 +88,10 @@ function DraggableObject({
   onDragStart: (id: string, y: number) => void;
 }) {
   const [, h] = obj.dimensions;
-  const color = CATEGORY_COLORS[obj.category] ?? CATEGORY_COLORS.other;
+  // The object's own sampled color when we have one — that's what makes a
+  // render recognizable as someone's actual room. Category palette is just
+  // the fallback for older layouts and the LiDAR path.
+  const color = obj.color ?? CATEGORY_COLORS[obj.category] ?? CATEGORY_COLORS.other;
 
   return (
     <group
@@ -150,9 +181,27 @@ function Scene({
 
   return (
     <>
-      <ambientLight intensity={0.7} />
-      <directionalLight position={[5, 10, 5]} intensity={0.8} />
-      <Walls width={layout.room.width} length={layout.room.length} height={layout.room.height} />
+      <SoftShadows size={28} samples={12} />
+      {/* Image-based lighting does most of the work here — flat ambient
+          light makes every material read as the same plastic. The preset
+          HDR is fetched from a CDN, so keep it behind Suspense: a slow or
+          failed fetch should cost us reflections, not the whole scene. */}
+      <Suspense fallback={null}>
+        <Environment preset="apartment" />
+      </Suspense>
+      <ambientLight intensity={0.25} />
+      <directionalLight
+        position={[layout.room.width, layout.room.height * 3, layout.room.length]}
+        intensity={1.7}
+        castShadow
+        shadow-mapSize={[2048, 2048]}
+        shadow-camera-left={-layout.room.width}
+        shadow-camera-right={layout.room.width}
+        shadow-camera-top={layout.room.length}
+        shadow-camera-bottom={-layout.room.length}
+        shadow-camera-far={layout.room.height * 8}
+      />
+      <Walls room={layout.room} />
       {objects.map((obj) => (
         <DraggableObject
           key={obj.id}
@@ -262,7 +311,11 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
         </div>
         {saving && <div className="text-gray-400">Saving…</div>}
       </div>
-      <Canvas camera={{ position: initialCameraPosition as unknown as [number, number, number], fov: 55 }}>
+      <Canvas
+        shadows
+        camera={{ position: initialCameraPosition as unknown as [number, number, number], fov: 55 }}
+        gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1 }}
+      >
         <Scene layout={layout} onPositionsSettled={handlePositionsSettled} />
       </Canvas>
     </div>

@@ -16,13 +16,30 @@ export const OBJECT_CATEGORIES = [
   "other",
 ] as const;
 
-const vec3 = z.tuple([z.number(), z.number(), z.number()]);
+export const SURFACE_MATERIALS = [
+  "carpet",
+  "wood",
+  "tile",
+  "concrete",
+  "vinyl",
+  "other",
+] as const;
 
+const vec3 = z.tuple([z.number(), z.number(), z.number()]);
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+
+// Colors and materials are optional throughout: the LiDAR path has no camera
+// imagery to sample them from, and layouts captured before this existed must
+// keep validating. Anything missing falls back to the category palette.
 export const RoomLayoutSchema = z.object({
   room: z.object({
     width: z.number().positive(),
     length: z.number().positive(),
     height: z.number().positive(),
+    wallColor: hexColor.optional(),
+    floorColor: hexColor.optional(),
+    ceilingColor: hexColor.optional(),
+    floorMaterial: z.enum(SURFACE_MATERIALS).optional(),
   }),
   objects: z.array(
     z.object({
@@ -32,6 +49,7 @@ export const RoomLayoutSchema = z.object({
       rotationY: z.number(),
       dimensions: vec3,
       confidence: z.number().min(0).max(1),
+      color: hexColor.optional(),
     })
   ),
 });

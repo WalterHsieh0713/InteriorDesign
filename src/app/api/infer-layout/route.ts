@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI, Type } from "@google/genai";
 import { PHOTOS_BUCKET, supabaseAdmin } from "@/lib/supabaseAdmin";
-import { OBJECT_CATEGORIES, RoomLayoutSchema } from "@/lib/roomLayoutSchema";
+import { OBJECT_CATEGORIES, SURFACE_MATERIALS, RoomLayoutSchema } from "@/lib/roomLayoutSchema";
 
 // Vision + reasoning over several images can run long — give it more than
 // the platform's 10s default before we get cut off mid-inference.
@@ -14,7 +14,15 @@ different corners, to reconstruct a simple 3D layout of it.
 
 Estimate:
 1. The room's overall dimensions in meters: width, length, height.
-2. Every distinct piece of furniture or fixture you can actually identify
+2. The room's actual surface colors, as you literally see them in the
+   photos — not idealized or "typical" values:
+   - wallColor: the dominant wall paint/wallpaper color, as #rrggbb.
+   - floorColor: the dominant floor color, as #rrggbb.
+   - ceilingColor: the ceiling color, as #rrggbb.
+   - floorMaterial: one of exactly: ${SURFACE_MATERIALS.join(", ")}.
+   Correct for lighting: report the surface's own color in neutral light,
+   not the color a shadowed or warmly-lit photo happens to show.
+3. Every distinct piece of furniture or fixture you can actually identify
    across the photos (don't invent objects you can't see).
 
 For each object, estimate:
@@ -24,6 +32,9 @@ For each object, estimate:
 - rotationY: rotation around the vertical Y axis, in radians.
 - dimensions: [width, height, depth] in meters (full extent, not half).
 - confidence: your confidence in this estimate, from 0 to 1.
+- color: that specific object's dominant color as #rrggbb, as actually
+  seen in the photos. This matters — a person should recognize their own
+  room from these colors.
 
 Coordinate system: right-handed, Y-up, floor at y = 0, origin at the exact
 center of the room's floor. x and z span the floor plane; y is height off
@@ -41,8 +52,12 @@ const RESPONSE_SCHEMA = {
         width: { type: Type.NUMBER },
         length: { type: Type.NUMBER },
         height: { type: Type.NUMBER },
+        wallColor: { type: Type.STRING },
+        floorColor: { type: Type.STRING },
+        ceilingColor: { type: Type.STRING },
+        floorMaterial: { type: Type.STRING, enum: [...SURFACE_MATERIALS] },
       },
-      required: ["width", "length", "height"],
+      required: ["width", "length", "height", "wallColor", "floorColor", "floorMaterial"],
     },
     objects: {
       type: Type.ARRAY,
@@ -55,8 +70,9 @@ const RESPONSE_SCHEMA = {
           rotationY: { type: Type.NUMBER },
           dimensions: { type: Type.ARRAY, items: { type: Type.NUMBER } },
           confidence: { type: Type.NUMBER },
+          color: { type: Type.STRING },
         },
-        required: ["id", "category", "position", "rotationY", "dimensions", "confidence"],
+        required: ["id", "category", "position", "rotationY", "dimensions", "confidence", "color"],
       },
     },
   },

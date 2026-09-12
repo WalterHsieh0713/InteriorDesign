@@ -35,7 +35,7 @@ function Panel({
   transparent?: boolean;
 }) {
   return (
-    <mesh position={offset}>
+    <mesh position={offset} castShadow receiveShadow>
       <boxGeometry args={size.map((v) => Math.max(v, 0.01)) as [number, number, number]} />
       <meshStandardMaterial
         color={color}
@@ -183,15 +183,15 @@ export default function FurnitureMesh({ category, dimensions, color, opacity }: 
       const shadeH = h * 0.25;
       return (
         <group>
-          <mesh position={[0, -h / 2 + baseH / 2, 0]}>
+          <mesh position={[0, -h / 2 + baseH / 2, 0]} castShadow receiveShadow>
             <cylinderGeometry args={[baseR, baseR, baseH, 16]} />
             <meshStandardMaterial color={dark} opacity={opacity} transparent={opacity < 1} />
           </mesh>
-          <mesh position={[0, -h / 2 + baseH + poleH / 2, 0]}>
+          <mesh position={[0, -h / 2 + baseH + poleH / 2, 0]} castShadow receiveShadow>
             <cylinderGeometry args={[poleR, poleR, poleH, 12]} />
             <meshStandardMaterial color={dark} opacity={opacity} transparent={opacity < 1} />
           </mesh>
-          <mesh position={[0, h / 2 - shadeH / 2, 0]}>
+          <mesh position={[0, h / 2 - shadeH / 2, 0]} castShadow receiveShadow>
             <cylinderGeometry args={[baseR * 0.55, baseR, shadeH, 16, 1, true]} />
             <meshStandardMaterial color={color} opacity={opacity * 0.9} transparent side={THREE.DoubleSide} />
           </mesh>
@@ -203,7 +203,7 @@ export default function FurnitureMesh({ category, dimensions, color, opacity }: 
       return (
         <group>
           <Panel size={[w, h, d]} offset={[0, 0, 0]} color={color} opacity={opacity} />
-          <mesh position={[w * 0.35, 0, d / 2 + 0.02]}>
+          <mesh position={[w * 0.35, 0, d / 2 + 0.02]} castShadow receiveShadow>
             <sphereGeometry args={[Math.min(w, h) * 0.04, 10, 10]} />
             <meshStandardMaterial color="#c9a227" metalness={0.7} roughness={0.3} />
           </mesh>
