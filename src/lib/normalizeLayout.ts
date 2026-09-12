@@ -19,28 +19,25 @@ import { OBJECT_CATEGORIES, RoomLayoutSchema, type RoomLayout } from "./roomLayo
 const KNOWN = new Set<string>(OBJECT_CATEGORIES);
 
 /**
- * RoomPlan category -> ours. Anything unlisted and unknown becomes "other",
- * which renders as a plain box: honest about not knowing, rather than
- * mislabelling an oven as furniture.
+ * RoomPlan category -> ours, for names that don't already match one of ours
+ * exactly. Appliances (oven, stove, refrigerator, ...) are NOT aliased here
+ * even though they used to be - they were demoted to "other" back when this
+ * project's category list didn't include them, and stayed that way after it
+ * grew to (this predates the appliance/detail categories landing in
+ * roomLayoutSchema.ts; `KNOWN.has(raw)` below now matches them directly).
+ * Re-adding an alias here that points an appliance at "other" would silently
+ * undo that work - an oven the scanner correctly identified would render as
+ * an anonymous grey box again. Anything genuinely unrecognised still falls
+ * through to "other" at the bottom of mapCategory, which is honest about not
+ * knowing rather than mislabelling something as furniture.
  */
 const ROOMPLAN_ALIASES: Record<string, (typeof OBJECT_CATEGORIES)[number]> = {
   television: "tv",
   screen: "tv",
   computer: "monitor",
-  refrigerator: "other",
-  oven: "other",
-  stove: "other",
-  dishwasher: "other",
-  washerdryer: "other",
-  sink: "other",
-  toilet: "other",
-  bathtub: "other",
-  fireplace: "other",
-  stairs: "other",
-  sofa: "sofa",
-  chair: "chair",
-  bed: "bed",
-  table: "table",
+  // A casing/formatting safety net, not the primary path - RoomPlan's own
+  // `.washerDryer` case is expected to already match `KNOWN` exactly.
+  washerdryer: "washerDryer",
 };
 
 function mapCategory(raw: unknown, dimensions: unknown): string {
