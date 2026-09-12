@@ -9,6 +9,9 @@ export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [captureUrl, setCaptureUrl] = useState<string | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [inferring, setInferring] = useState(false);
+  const [layoutJson, setLayoutJson] = useState<string | null>(null);
+  const [inferError, setInferError] = useState<string | null>(null);
 
   // Generated client-side only, after mount — a UUID picked during SSR would
   // never match the one the client re-generates on hydration.
@@ -43,6 +46,29 @@ export default function Home() {
     };
   }, [sessionId]);
 
+  async function generateLayout() {
+    if (!sessionId) return;
+    setInferring(true);
+    setInferError(null);
+    setLayoutJson(null);
+    try {
+      const res = await fetch("/api/infer-layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session: sessionId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Layout inference failed");
+      }
+      setLayoutJson(JSON.stringify(data, null, 2));
+    } catch (err) {
+      setInferError(err instanceof Error ? err.message : "Layout inference failed");
+    } finally {
+      setInferring(false);
+    }
+  }
+
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-8 text-center">
       <h1 className="text-2xl font-bold">Room Scanner</h1>
@@ -74,6 +100,24 @@ export default function Home() {
             />
           ))}
         </div>
+      )}
+
+      {photos.length > 0 && (
+        <button
+          onClick={generateLayout}
+          disabled={inferring}
+          className="px-4 py-2 rounded bg-black text-white text-sm disabled:opacity-50"
+        >
+          {inferring ? "Generating layout…" : "Generate 3D Layout"}
+        </button>
+      )}
+
+      {inferError && <p className="text-red-500 text-sm max-w-md">{inferError}</p>}
+
+      {layoutJson && (
+        <pre className="text-left text-xs bg-gray-100 rounded p-4 max-w-2xl w-full overflow-auto max-h-96">
+          {layoutJson}
+        </pre>
       )}
     </main>
   );
