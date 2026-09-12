@@ -10,8 +10,7 @@ of it can be built and demoed *before* that half is finished — see
 [What needs teammates](#what-needs-teammates) for the short list of things
 that don't.
 
-Read `PLAN.md` for the project as a whole and `PARALLEL_AGENTS.md` for the
-other workstreams.
+Read `PLAN.md` for the project as a whole.
 
 ---
 

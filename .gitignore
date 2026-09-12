@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ABO survey output — 1.5MB scratch index, regenerate with scripts/abo-survey.mjs
+abo-candidates.json
+.abo-picks.txt
