@@ -6,6 +6,7 @@ import {
   placeDetection,
   mergeDetections,
   rejectDuplicates,
+  snapToSupports,
   type Detection2D,
   type PlacedObject,
 } from "@/lib/backproject";
@@ -194,7 +195,13 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const merged = rejectDuplicates(mergeDetections(placed), layout.objects);
+  // Snap last, after clustering has settled each item's final position —
+  // averaging across frames would otherwise lift a snapped item back off its
+  // surface by a centimetre or two.
+  const merged = snapToSupports(
+    rejectDuplicates(mergeDetections(placed), layout.objects),
+    layout
+  );
 
   if (merged.length === 0) {
     return NextResponse.json({

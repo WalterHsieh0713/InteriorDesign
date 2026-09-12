@@ -332,6 +332,97 @@ export function mergeDetections(placed: PlacedObject[], minSupport = 2): PlacedO
     .map((c) => c.object);
 }
 
+/**
+ * Puts desk items physically onto the thing they belong on.
+ *
+ * The bottom-edge ray gets the base roughly right, but "roughly" still reads
+ * as floating: a base 4cm above a desktop is obvious at a glance. And when
+ * the base is hidden behind the desk's own edge, the ray sails past and lands
+ * on the wall, putting the monitor nowhere near the desk at all.
+ *
+ * So this is a geometric guarantee rather than an estimate. An item over a
+ * surface is dropped onto it exactly; an item that missed but is close to one
+ * is pulled back over it first. Anything genuinely nowhere near furniture
+ * falls to the floor, which is at least a surface it could really be on.
+ */
+export function snapToSupports(items: PlacedObject[], layout: RoomLayout): PlacedObject[] {
+  const supports = layout.objects
+    // Something you can stand a monitor on: broad enough to hold it, and tall
+    // enough to be furniture rather than another small detection.
+    .filter((o) => Math.min(o.dimensions[0], o.dimensions[2]) > 0.25 && o.dimensions[1] > 0.2)
+    .map((o) => ({
+      top: o.position[1] + o.dimensions[1] / 2,
+      x: o.position[0],
+      z: o.position[2],
+      halfW: o.dimensions[0] / 2,
+      halfD: o.dimensions[2] / 2,
+      cos: Math.cos(-o.rotationY),
+      sin: Math.sin(-o.rotationY),
+    }));
+
+  return items.map((item) => {
+    if (!RESTS_ON_SURFACE.has(item.category)) return item;
+
+    const halfHeight = item.dimensions[1] / 2;
+    const base = item.position[1] - halfHeight;
+    let x = item.position[0];
+    let z = item.position[2];
+
+    // Local footprint coordinates on a given support, so a rotated desk is
+    // tested as the rectangle it actually is.
+    const local = (s: (typeof supports)[number]) => {
+      const dx = x - s.x;
+      const dz = z - s.z;
+      return { lx: dx * s.cos + dz * s.sin, lz: -dx * s.sin + dz * s.cos };
+    };
+
+    // Highest surface this item is already standing over, ignoring anything
+    // above it — a monitor belongs on the desk, not on the shelf over it.
+    let chosen: (typeof supports)[number] | null = null;
+    for (const s of supports) {
+      if (s.top > base + 0.4) continue;
+      const { lx, lz } = local(s);
+      if (Math.abs(lx) > s.halfW || Math.abs(lz) > s.halfD) continue;
+      if (!chosen || s.top > chosen.top) chosen = s;
+    }
+
+    // Overshot onto the wall behind: adopt the nearest surface within reach
+    // and pull the item back over it.
+    if (!chosen) {
+      let bestDistance = 0.9;
+      for (const s of supports) {
+        if (s.top > base + 0.4) continue;
+        const { lx, lz } = local(s);
+        const outsideX = Math.max(0, Math.abs(lx) - s.halfW);
+        const outsideZ = Math.max(0, Math.abs(lz) - s.halfD);
+        const distance = Math.hypot(outsideX, outsideZ);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          chosen = s;
+        }
+      }
+      if (chosen) {
+        // Clamp inside the footprint, with a small inset so it isn't teetering
+        // exactly on the lip.
+        const { lx, lz } = local(chosen);
+        const inset = 0.05;
+        const clampedX = Math.max(-chosen.halfW + inset, Math.min(chosen.halfW - inset, lx));
+        const clampedZ = Math.max(-chosen.halfD + inset, Math.min(chosen.halfD - inset, lz));
+        // Back to world: the inverse of the rotation applied above.
+        x = chosen.x + clampedX * chosen.cos - clampedZ * chosen.sin;
+        z = chosen.z + clampedX * chosen.sin + clampedZ * chosen.cos;
+      }
+    }
+
+    const top = chosen ? chosen.top : 0;
+    return {
+      ...item,
+      position: [x, top + halfHeight, z],
+      rotationY: item.rotationY,
+    };
+  });
+}
+
 /** Drops anything that's really just an object the scan already knows about. */
 export function rejectDuplicates(
   candidates: PlacedObject[],
