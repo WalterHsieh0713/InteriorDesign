@@ -639,6 +639,8 @@ function Scene({
             key={o.id}
             segments={segmentsFor(o.preset!.slice(4) as LedPresetId, layout.room, objects)}
             color={o.color ?? "#8b5cf6"}
+            selected={selectedId === o.id}
+            onSelect={() => onSelect(o.id)}
           />
         ))}
       {/* What each projector is actually throwing, at true size on the wall it
@@ -1192,18 +1194,11 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
       {/* Bottom action bar. Rotate and delete act on the selection, so they
           stay disabled until there is one rather than disappearing — a
           control that vanishes is harder to find the second time. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center px-4">
+      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center pl-4 pr-20">
         {/* One row, always. When the viewport is too narrow for every control
             the bar scrolls sideways rather than wrapping into a second row that
             covers the room. */}
         <div className="pointer-events-auto flex max-w-full flex-nowrap items-center gap-1 overflow-x-auto rounded-full bg-white/95 p-1.5 shadow-lg backdrop-blur [scrollbar-width:none] dark:bg-neutral-900/95">
-          <button
-            onClick={() => setCatalogOpen((v) => !v)}
-            className="rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            {selected ? "Swap…" : "Add furniture"}
-          </button>
-          <span className="mx-1 h-6 w-px bg-black/10 dark:bg-white/10" />
           <button
             onClick={undo}
             disabled={historyCounts.past === 0}
@@ -1256,7 +1251,7 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
                 : "rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
             }
           >
-            Snap
+            Edge snap
           </button>
           <button onClick={() => zoom(true)} title="Zoom in" className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10">+</button>
           <button onClick={() => zoom(false)} title="Zoom out" className="rounded-full px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10">−</button>
@@ -1351,6 +1346,7 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
       <CatalogPanel
         open={catalogOpen}
         onClose={() => setCatalogOpen(false)}
+        onOpen={() => setCatalogOpen(true)}
         swapTargetLabel={selected ? selected.category : null}
         onPick={handlePick}
 

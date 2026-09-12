@@ -33,6 +33,7 @@ function PosterThumb({ art, size }: { art: PosterArt; size: PosterSize }) {
 type Props = {
   open: boolean;
   onClose: () => void;
+  onOpen: () => void;
   /** Non-null when a room object is selected — picking then swaps it. */
   swapTargetLabel: string | null;
   onPick: (item: CatalogItem) => void;
@@ -42,7 +43,7 @@ type Props = {
   ledPresets: LedPreset[];
 };
 
-function CatalogPanel({ open, onClose, swapTargetLabel, onPick, onAddPoster, onAddLed, ledPresets }: Props) {
+function CatalogPanel({ open, onClose, onOpen, swapTargetLabel, onPick, onAddPoster, onAddLed, ledPresets }: Props) {
   const [tab, setTab] = useState<"furniture" | "decor">("furniture");
   const [category, setCategory] = useState<ObjectCategory | "all">("all");
   const [query, setQuery] = useState("");
@@ -56,14 +57,55 @@ function CatalogPanel({ open, onClose, swapTargetLabel, onPick, onAddPoster, onA
 
   // Stays mounted so it can slide rather than blink into existence, and so a
   // half-typed search and a chosen category survive closing and reopening it.
+  // Clicking the rail's current section closes the drawer; clicking the other
+  // one switches to it without making you close and reopen.
+  function railClick(next: "furniture" | "decor") {
+    if (open && tab === next) onClose();
+    else {
+      setTab(next);
+      if (!open) onOpen();
+    }
+  }
+
+  const RAIL = "w-14";
+
   return (
-    <aside
-      aria-hidden={!open}
-      inert={!open ? true : undefined}
-      className={`absolute right-0 top-0 z-20 flex h-full w-full max-w-sm flex-col border-l border-black/10 bg-white/95 backdrop-blur transition-transform duration-200 ease-out motion-reduce:transition-none dark:border-white/10 dark:bg-neutral-900/95 ${
-        open ? "translate-x-0 shadow-2xl" : "pointer-events-none translate-x-full"
-      }`}
-    >
+    <>
+      {/* A permanent rail down the right edge, rather than one button lost in
+          the middle of the bottom toolbar. The catalog is the thing people use
+          most, so it gets a fixed, obvious home. */}
+      <div className={`absolute right-0 top-0 z-30 flex ${RAIL} h-full flex-col items-center gap-2 border-l border-black/10 bg-white/95 py-3 backdrop-blur dark:border-white/10 dark:bg-neutral-900/95`}>
+        {([
+          { id: "furniture" as const, glyph: "🛋", label: "Furniture" },
+          { id: "decor" as const, glyph: "✦", label: "Decor" },
+        ]).map((r) => {
+          const active = open && tab === r.id;
+          return (
+            <button
+              key={r.id}
+              onClick={() => railClick(r.id)}
+              aria-pressed={active}
+              title={r.label}
+              className={`flex w-11 flex-col items-center gap-0.5 rounded-lg px-1 py-2 text-[9px] font-medium leading-tight transition ${
+                active
+                  ? "bg-blue-600 text-white"
+                  : "text-neutral-600 hover:bg-black/5 dark:text-neutral-300 dark:hover:bg-white/10"
+              }`}
+            >
+              <span aria-hidden className="text-base leading-none">{r.glyph}</span>
+              {r.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <aside
+        aria-hidden={!open}
+        inert={!open ? true : undefined}
+        className={`absolute right-14 top-0 z-20 flex h-full w-80 max-w-[calc(100%-3.5rem)] flex-col border-l border-black/10 bg-white/95 backdrop-blur transition-transform duration-200 ease-out motion-reduce:transition-none dark:border-white/10 dark:bg-neutral-900/95 ${
+          open ? "translate-x-0 shadow-2xl" : "pointer-events-none translate-x-[calc(100%+3.5rem)]"
+        }`}
+      >
       <header className="flex items-start justify-between gap-3 border-b border-black/10 p-4 dark:border-white/10">
         <div>
           <h2 className="text-sm font-semibold">Catalog</h2>
@@ -79,23 +121,6 @@ function CatalogPanel({ open, onClose, swapTargetLabel, onPick, onAddPoster, onA
           ×
         </button>
       </header>
-
-      <div className="flex gap-1 border-b border-black/10 px-3 pt-3 dark:border-white/10">
-        {(["furniture", "decor"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            aria-pressed={tab === t}
-            className={`flex-1 rounded-t px-3 py-1.5 text-xs capitalize ${
-              tab === t
-                ? "border-b-2 border-blue-600 font-medium text-blue-700 dark:text-blue-400"
-                : "text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
 
       {tab === "decor" ? (
         <div className="flex-1 overflow-y-auto p-3">
@@ -236,7 +261,8 @@ function CatalogPanel({ open, onClose, swapTargetLabel, onPick, onAddPoster, onA
         <p className="mt-1">{ATTRIBUTION}</p>
         <p className="mt-1">Prices and links from IKEA US at build time.</p>
       </footer>
-    </aside>
+      </aside>
+    </>
   );
 }
 

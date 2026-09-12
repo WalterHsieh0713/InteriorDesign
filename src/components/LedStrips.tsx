@@ -6,6 +6,10 @@ import type { LedSegment } from "@/lib/ledPresets";
 
 const STRIP_THICKNESS = 0.018;
 
+// The invisible sleeve you actually click. Generous, because a strip runs
+// along an edge where there is rarely anything else competing for the hit.
+const PICK_THICKNESS = 0.09;
+
 /**
  * Renders one LED run as a chain of glowing segments.
  *
@@ -20,11 +24,15 @@ export default function LedStrips({
   color = "#8b5cf6",
   intensity = 1,
   castLight = true,
+  selected = false,
+  onSelect,
 }: {
   segments: LedSegment[];
   color?: string;
   intensity?: number;
   castLight?: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
 }) {
   const pieces = useMemo(
     () =>
@@ -53,20 +61,31 @@ export default function LedStrips({
   return (
     <group>
       {pieces.map((p, i) => (
-        <mesh
-          key={i}
-          position={p.mid}
-          quaternion={p.quat}
-          raycast={() => null /* a strip should never swallow a click meant for furniture */}
-        >
-          <boxGeometry args={[STRIP_THICKNESS, p.length, STRIP_THICKNESS]} />
-          <meshStandardMaterial
-            color={color}
-            emissive={color}
-            emissiveIntensity={2.2 * intensity}
-            toneMapped={false}
-          />
-        </mesh>
+        <group key={i} position={p.mid} quaternion={p.quat}>
+          <mesh raycast={() => null /* the visible strip is too thin to hit; the proxy below is what you click */}>
+            <boxGeometry args={[STRIP_THICKNESS, p.length, STRIP_THICKNESS]} />
+            <meshStandardMaterial
+              color={color}
+              emissive={selected ? "#ffffff" : color}
+              emissiveIntensity={(selected ? 3.4 : 2.2) * intensity}
+              toneMapped={false}
+            />
+          </mesh>
+          {/* An 18mm strip is almost impossible to click, so an invisible
+              sleeve around it catches the pointer. Without this a run could be
+              installed and then never selected or deleted. */}
+          {onSelect && (
+            <mesh
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                onSelect();
+              }}
+            >
+              <boxGeometry args={[PICK_THICKNESS, p.length, PICK_THICKNESS]} />
+              <meshBasicMaterial visible={false} />
+            </mesh>
+          )}
+        </group>
       ))}
       {castLight &&
         lights.map((pos, i) => (
