@@ -110,6 +110,11 @@ export const RoomLayoutSchema = z.object({
       // layout saved before bindings existed still parses, and comes back as
       // "owned" — which is exactly what a scanned object is.
       binding: ItemBindingSchema.default({ source: "owned" }),
+      // How a decorative object is configured, when the choice is not a
+      // separate product: "poster:comic:a2", "led:ceiling". Optional and
+      // additive — a scan never sets it, and anything that doesn't understand
+      // a given preset can ignore the object entirely.
+      preset: z.string().optional(),
     })
   ),
   cameraFrames: z.array(cameraFrame).optional(),

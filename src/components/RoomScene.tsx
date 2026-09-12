@@ -7,9 +7,14 @@ import * as THREE from "three";
 import type { ItemBinding, RoomLayout } from "@/lib/roomLayoutSchema";
 import { CATALOG_BY_ID, formatPrice } from "@/lib/catalog";
 import { modelUrlFor, toBinding, toDimensions, type CatalogItem } from "@/lib/catalogItem";
+import { initialPlacement, mountOf, snapToWall, supportHeightAt } from "@/lib/placement";
+import { availablePresets, segmentsFor, type LedPreset, type LedPresetId } from "@/lib/ledPresets";
+import { FRAME_DEPTH, posterLabel, type PosterArt, type PosterSize } from "@/lib/posters";
 import FurnitureMesh from "./FurnitureMesh";
 import ProductMesh from "./ProductMesh";
 import CatalogPanel from "./CatalogPanel";
+import PosterMesh from "./PosterMesh";
+import LedStrips from "./LedStrips";
 import { getTexture, type TextureKind } from "./textures";
 import { prepareCameras, bakePlaneTexture, type PreparedCamera } from "./projectiveTexture";
 
@@ -246,6 +251,11 @@ function DraggableObject({
   // own scanned furniture and for any product with no model paired to it.
   const item = obj.binding.source === "catalog" ? CATALOG_BY_ID.get(obj.binding.catalogItemId) : undefined;
   const productModelUrl = item ? modelUrlFor(item) : null;
+  // "poster:comic:a2" — the artwork is drawn, not downloaded, so it is chosen
+  // here rather than looked up in the catalog.
+  const posterArt = obj.preset?.startsWith("poster:")
+    ? (obj.preset.split(":")[1] as PosterArt)
+    : null;
   // The object's own sampled color when we have one — that's what makes a
   // render recognizable as someone's actual room. Category palette is just
   // the fallback for older layouts and the LiDAR path.
@@ -261,7 +271,9 @@ function DraggableObject({
         onDragStart(obj.id, obj.position[1], e);
       }}
     >
-      {productModelUrl && item ? (
+      {posterArt ? (
+        <PosterMesh art={posterArt} dimensions={obj.dimensions} selected={isSelected} />
+      ) : productModelUrl && item ? (
         <Suspense
           fallback={
             <FurnitureMesh
@@ -355,12 +367,37 @@ function Scene({
   const { camera, raycaster, gl } = useThree();
   const lightColor = layout.room.lightColor ?? "#ffffff";
 
-  const handleDragStart = useCallback((id: string, y: number, e: ThreeEvent<PointerEvent>) => {
-    setDraggingId(id);
-    gesture.current = { x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, moved: false };
-    dragPlaneY.current = y;
-    dragPlane.current.set(new THREE.Vector3(0, 1, 0), -y);
-  }, []);
+  const handleDragStart = useCallback(
+    (id: string, y: number, e: ThreeEvent<PointerEvent>) => {
+      setDraggingId(id);
+      gesture.current = { x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, moved: false };
+      dragPlaneY.current = y;
+
+      // A wall piece drags along the face of its wall, so the surface the
+      // pointer is projected onto has to be that wall, not the floor. Anything
+      // else drags across a horizontal plane as before.
+      const obj = latest.current.find((o) => o.id === id);
+      const mount = obj ? mountOf(obj) : "floor";
+      if (obj && mount === "wall") {
+        const snap = snapToWall(obj, obj.position[0], obj.position[1], obj.position[2], layout.room);
+        const n =
+          snap.side === "north"
+            ? new THREE.Vector3(0, 0, 1)
+            : snap.side === "south"
+              ? new THREE.Vector3(0, 0, -1)
+              : snap.side === "west"
+                ? new THREE.Vector3(1, 0, 0)
+                : new THREE.Vector3(-1, 0, 0);
+        dragPlane.current.setFromNormalAndCoplanarPoint(
+          n,
+          new THREE.Vector3(snap.position[0], snap.position[1], snap.position[2])
+        );
+      } else {
+        dragPlane.current.set(new THREE.Vector3(0, 1, 0), -y);
+      }
+    },
+    [layout.room]
+  );
 
   useEffect(() => {
     if (!draggingId) return;
@@ -380,14 +417,27 @@ function Scene({
       pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
-      if (raycaster.ray.intersectPlane(dragPlane.current, intersection.current)) {
-        const { x, z } = intersection.current;
-        onObjectsChange(
-          latest.current.map((o) =>
-            o.id === draggingId ? { ...o, position: [x, dragPlaneY.current, z] as [number, number, number] } : o
-          )
-        );
+      if (!raycaster.ray.intersectPlane(dragPlane.current, intersection.current)) return;
+
+      const dragged = latest.current.find((o) => o.id === draggingId);
+      if (!dragged) return;
+      const mount = mountOf(dragged);
+      const { x, y, z } = intersection.current;
+      let next: [number, number, number];
+
+      if (mount === "wall") {
+        // Free vertically, pinned to the wall.
+        next = snapToWall(dragged, x, y, z, layout.room).position;
+      } else if (mount === "tabletop") {
+        // Rest on whatever is underneath: a desk lamp rises onto a tall
+        // nightstand and drops onto a lower desk without anyone typing a height.
+        const support = supportHeightAt(dragged, x, z, latest.current);
+        next = [x, support + dragged.dimensions[1] / 2, z];
+      } else {
+        next = [x, dragPlaneY.current, z];
       }
+
+      onObjectsChange(latest.current.map((o) => (o.id === draggingId ? { ...o, position: next } : o)));
     }
 
     function handleUp() {
@@ -404,7 +454,7 @@ function Scene({
       canvas.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
     };
-  }, [draggingId, camera, raycaster, gl, onPositionsSettled, onObjectsChange, onSelect]);
+  }, [draggingId, camera, raycaster, gl, layout.room, onPositionsSettled, onObjectsChange, onSelect]);
 
   return (
     <>
@@ -458,7 +508,21 @@ function Scene({
         <meshBasicMaterial visible={false} />
       </mesh>
       <Walls room={layout.room} cameras={cameras} />
-      {objects.map((obj) => (
+      {/* A light strip has no body to drag — it follows an edge of the room or
+          of a piece of furniture, so it is drawn from the room rather than
+          placed in it, and it re-runs itself when that furniture moves. */}
+      {objects
+        .filter((o) => o.preset?.startsWith("led:"))
+        .map((o) => (
+          <LedStrips
+            key={o.id}
+            segments={segmentsFor(o.preset!.slice(4) as LedPresetId, layout.room, objects)}
+            color={o.color ?? "#8b5cf6"}
+          />
+        ))}
+      {objects
+        .filter((o) => !o.preset?.startsWith("led:"))
+        .map((obj) => (
         <DraggableObject
           key={obj.id}
           obj={obj}
@@ -591,16 +655,6 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
     [persist]
   );
 
-  // Where a newly-added product lands. Dropping everything at the floor in the
-  // centre would bury a wall mirror in the carpet and sink a desk lamp, so the
-  // mount decides the height; the person drags it where they actually want it.
-  const placementFor = useCallback((item: CatalogItem, room: RoomLayout["room"]): [number, number, number] => {
-    const [, height] = toDimensions(item);
-    if (item.mount === "wall") return [0, Math.min(1.5, room.height - height / 2), -room.length / 2 + 0.1];
-    if (item.mount === "tabletop") return [0, 0.75 + height / 2, 0];
-    return [0, height / 2, 0];
-  }, []);
-
   const handlePick = useCallback(
     (item: CatalogItem) => {
       const current = layoutRef.current;
@@ -626,22 +680,109 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
           )
         );
       } else {
-        mutateObjects((objects) => [
-          ...objects,
-          {
+        mutateObjects((objects) => {
+          const placed = {
             id: crypto.randomUUID(),
             category: item.category,
-            position: placementFor(item, current.room),
+            position: [0, dimensions[1] / 2, 0] as [number, number, number],
             rotationY: 0,
             dimensions,
             confidence: 1, // placed by a person, not guessed by a model
             color: item.dominantHex,
             binding,
-          },
-        ]);
+          };
+          // Ask the placement rules where it belongs: clear floor for furniture,
+          // the nearest wall for a poster, a real surface for a desk lamp.
+          placed.position = initialPlacement(placed, current.room, objects);
+          if (item.mount === "wall") {
+            placed.rotationY = snapToWall(
+              placed,
+              placed.position[0],
+              placed.position[1],
+              placed.position[2],
+              current.room
+            ).rotationY;
+          }
+          return [...objects, placed];
+        });
       }
     },
-    [mutateObjects, placementFor, selectedId]
+    [mutateObjects, selectedId]
+  );
+
+  const addPoster = useCallback(
+    (art: PosterArt, size: PosterSize) => {
+      const current = layoutRef.current;
+      if (!current) return;
+      mutateObjects((objects) => {
+        const placed = {
+          id: crypto.randomUUID(),
+          category: "other" as const,
+          position: [0, 1.5, 0] as [number, number, number],
+          rotationY: 0,
+          dimensions: [size.width, size.height, FRAME_DEPTH] as [number, number, number],
+          confidence: 1,
+          color: "#1d1f24",
+          // A poster is not a product with a price and a buy link, so it takes a
+          // custom binding with no price rather than a made-up one that would
+          // land in the feed's budget totals.
+          binding: {
+            source: "custom" as const,
+            label: posterLabel(art, size),
+            priceCents: null,
+            url: null,
+          },
+          preset: `poster:${art}:${size.id}`,
+        };
+        placed.position = initialPlacement(placed, current.room, objects);
+        placed.rotationY = snapToWall(
+          placed,
+          placed.position[0],
+          placed.position[1],
+          placed.position[2],
+          current.room
+        ).rotationY;
+        return [...objects, placed];
+      });
+    },
+    [mutateObjects]
+  );
+
+  const addLed = useCallback(
+    (preset: LedPreset) => {
+      mutateObjects((objects) => {
+        // One run per preset — installing "ceiling perimeter" twice is not a
+        // thing, and two identical runs just double the light.
+        const existing = objects.filter((o) => o.preset !== `led:${preset.id}`);
+        return [
+          ...existing,
+          {
+            id: crypto.randomUUID(),
+            category: "other" as const,
+            // A strip has no body: its geometry comes from the room each frame,
+            // so these are placeholders that nothing reads.
+            position: [0, 0, 0] as [number, number, number],
+            rotationY: 0,
+            dimensions: [0.01, 0.01, 0.01] as [number, number, number],
+            confidence: 1,
+            color: "#8b5cf6",
+            binding: {
+              source: "custom" as const,
+              label: `LED strip · ${preset.label}`,
+              priceCents: null,
+              url: null,
+            },
+            preset: `led:${preset.id}`,
+          },
+        ];
+      });
+    },
+    [mutateObjects]
+  );
+
+  const ledPresets = useMemo(
+    () => availablePresets(layout?.objects ?? []),
+    [layout?.objects]
   );
 
   const rotateSelected = useCallback(
@@ -833,6 +974,12 @@ export default function RoomScene({ sessionId }: { sessionId: string }) {
         onClose={() => setCatalogOpen(false)}
         swapTargetLabel={selected ? selected.category : null}
         onPick={handlePick}
+
+        onAddPoster={addPoster}
+
+        onAddLed={addLed}
+
+        ledPresets={ledPresets}
       />
     </div>
   );
