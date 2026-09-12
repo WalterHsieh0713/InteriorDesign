@@ -2,6 +2,7 @@ import SwiftUI
 import RoomPlan
 
 struct ContentView: View {
+    @EnvironmentObject private var deepLink: DeepLinkSession
     @State private var showScanner = false
     @State private var showShareSheet = false
     @State private var shareURL: URL?
@@ -9,6 +10,11 @@ struct ContentView: View {
     @State private var isUploading = false
     @State private var uploadStage = "Uploading..."
     @State private var diagnostics: String?
+    /// Set once a scan that arrived via the web app's QR code finishes
+    /// uploading. That session is already being polled by the browser that
+    /// showed the QR, so there's nothing left to hand back manually — no
+    /// share sheet, just a confirmation.
+    @State private var handoffComplete = false
 
     /// RoomCaptureSession.isSupported is false on any device without a LiDAR
     /// scanner (and always false in the Simulator).
@@ -50,6 +56,12 @@ struct ContentView: View {
                     .multilineTextAlignment(.center)
             }
 
+            if handoffComplete {
+                Label("Sent to your computer — check the browser", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .font(.subheadline)
+            }
+
             if let diagnostics {
                 ScrollView {
                     Text(diagnostics)
@@ -80,18 +92,33 @@ struct ContentView: View {
                 ShareSheet(activityItems: [shareURL])
             }
         }
+        // The web app's "Scan with LiDAR" QR code opens this app via
+        // roomscanner://scan?session=<id> (see DeepLinkSession). That link
+        // is the user's "Scan Room" tap already having happened on the web
+        // side, so jump straight into the scanner instead of making them
+        // tap it again here.
+        .onChange(of: deepLink.pendingSessionId) { newValue in
+            if newValue != nil && !showScanner && !isUploading {
+                handoffComplete = false
+                showScanner = true
+            }
+        }
     }
 
     private func export(_ room: CapturedRoom, frames: [Data]) {
         errorMessage = nil
         isUploading = true
         uploadStage = "Uploading room..."
+        // Captured before any `await` — export() can take a while, and we
+        // want *this* scan tied to whatever session opened it, not whatever
+        // deepLink.pendingSessionId happens to hold by the time we get here.
+        let linkedSession = deepLink.pendingSessionId
 
         Task {
             do {
                 let (layout, debugSummary) = RoomExporter.buildLayout(from: room)
                 await MainActor.run { diagnostics = debugSummary }
-                let session = UUID().uuidString
+                let session = linkedSession ?? UUID().uuidString
                 try await LayoutUploader.upload(layout, session: session)
 
                 // Colors are a bonus on top of a room that already works —
@@ -122,18 +149,29 @@ struct ContentView: View {
                 }
                 await MainActor.run { diagnostics = debugSummary + "\n" + colorNote }
 
-                let url = LayoutUploader.shareableRoomURL(session: session)
-
-                await MainActor.run {
-                    isUploading = false
-                    shareURL = url
-                }
-                // Give the fullScreenCover a moment to finish dismissing
-                // before presenting the share sheet, otherwise SwiftUI can
-                // drop it.
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                await MainActor.run {
-                    showShareSheet = true
+                if linkedSession != nil {
+                    // The browser that showed the QR is already polling
+                    // /api/layout for this exact session — it'll navigate
+                    // itself the moment this upload lands. Nothing to hand
+                    // back manually.
+                    await MainActor.run {
+                        isUploading = false
+                        deepLink.pendingSessionId = nil
+                        handoffComplete = true
+                    }
+                } else {
+                    let url = LayoutUploader.shareableRoomURL(session: session)
+                    await MainActor.run {
+                        isUploading = false
+                        shareURL = url
+                    }
+                    // Give the fullScreenCover a moment to finish dismissing
+                    // before presenting the share sheet, otherwise SwiftUI
+                    // can drop it.
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    await MainActor.run {
+                        showShareSheet = true
+                    }
                 }
             } catch {
                 await MainActor.run {
