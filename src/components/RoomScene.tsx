@@ -7,7 +7,7 @@ import * as THREE from "three";
 import type { ItemBinding, RoomLayout } from "@/lib/roomLayoutSchema";
 import { CATALOG_BY_ID, formatPrice } from "@/lib/catalog";
 import { meshForItem, toBinding, toDimensions, type CatalogItem } from "@/lib/catalogItem";
-import { clampToRoom, initialPlacement, mountOf, snapFloorNearWall, snapToWall, supportHeightAt } from "@/lib/placement";
+import { clampToRoom, hangFromCeiling, initialPlacement, mountOf, snapFloorNearWall, snapToWall, supportHeightAt } from "@/lib/placement";
 import { availablePresets, rollFor, runLength, segmentsFor, type LedPreset, type LedPresetId } from "@/lib/ledPresets";
 import { projectionFor } from "@/lib/projection";
 import { buildShoppingList, type LineItem } from "@/lib/shoppingList";
@@ -105,7 +105,7 @@ function WallPanel({
   children,
   ...props
 }: {
-  axis: "x" | "z";
+  axis: "x" | "y" | "z";
   sign: 1 | -1;
   limit: number;
   children: ReactNode;
@@ -286,6 +286,25 @@ function Walls({ room, cameras }: { room: RoomLayout["room"]; cameras: PreparedC
           roughness={floorPhoto ? 0.75 : floorRoughness}
         />
       </mesh>
+      {/* A ceiling, so a pendant has something to hang from. It hides while the
+          camera is above it, which is nearly always — the same rule the walls
+          follow, and the reason you can still see into the room at all. */}
+      <WallPanel
+        axis="y"
+        sign={1}
+        limit={height}
+        position={[0, height, 0]}
+        rotation={[Math.PI / 2, 0, 0]}
+      >
+        <planeGeometry args={[width, length]} />
+        <meshStandardMaterial
+          color={room.ceilingColor ?? "#e8e6e2"}
+          side={THREE.DoubleSide}
+          roughness={0.97}
+          transparent
+          opacity={wallOpacity}
+        />
+      </WallPanel>
       <WallPanel axis="z" sign={-1} limit={length / 2} position={[0, height / 2, -length / 2]}>
         <planeGeometry args={[width, height]} />
         {wallMaterial(backWallPhoto)}
@@ -488,6 +507,8 @@ function Scene({
           n,
           new THREE.Vector3(snap.position[0], snap.position[1], snap.position[2])
         );
+      } else if (obj && mount === "ceiling") {
+        dragPlane.current.set(new THREE.Vector3(0, 1, 0), -(layout.room.height - obj.dimensions[1] / 2));
       } else {
         dragPlane.current.set(new THREE.Vector3(0, 1, 0), -y);
       }
@@ -537,6 +558,9 @@ function Scene({
           )
         );
         return;
+      } else if (mount === "ceiling") {
+        // Free over the floor, fixed to the ceiling.
+        next = hangFromCeiling(dragged, x, z, layout.room);
       } else if (mount === "tabletop") {
         // Rest on whatever is underneath: a desk lamp rises onto a tall
         // nightstand and drops onto a lower desk without anyone typing a height.

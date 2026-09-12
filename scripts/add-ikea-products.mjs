@@ -42,7 +42,11 @@ const CATEGORY_WORDS = [
   ["plant", "plant"], ["vase", "plant"],
 ];
 
-const MOUNT = { mirror: "wall", lamp: "floor", rug: "floor" };
+// A pendant hangs from the ceiling, a sconce sits on a wall, a floor lamp
+// stands. They are all "lamp", so the product name is what separates them.
+const MOUNT = { mirror: "wall", rug: "floor" };
+const CEILING_WORDS = /pendant|chandelier|ceiling lamp|ceiling light|hanging lamp|flush mount/i;
+const WALL_WORDS = /wall lamp|sconce|wall light|wall shelf|wall art|picture ledge/i;
 
 const FINISH = { white:"#F2F2F0", black:"#2B2B2D", "black-brown":"#3B2F2A", "dark gray":"#4A4E52",
   "dark grey":"#4A4E52", gray:"#8A8D8F", grey:"#8A8D8F", beige:"#C9C6BE", oak:"#C8A87C",
@@ -54,6 +58,20 @@ function categoryFor(name, override) {
   const n = name.toLowerCase();
   for (const [word, cat] of CATEGORY_WORDS) if (n.includes(word)) return cat;
   return "other";
+}
+
+/**
+ * How a product installs.
+ *
+ * Category alone cannot answer this for lighting: a pendant, a wall sconce and
+ * a floor lamp are all "lamp" and belong on three different surfaces. A pendant
+ * left on the floor is the giveaway that nobody checked.
+ */
+function mountFor(category, name) {
+  if (CEILING_WORDS.test(name)) return "ceiling";
+  if (WALL_WORDS.test(name)) return "wall";
+  if (/table lamp|desk lamp|work lamp/i.test(name)) return "tabletop";
+  return MOUNT[category] ?? "floor";
 }
 
 function hexFor(color, name) {
@@ -158,7 +176,7 @@ for (const { url, category: override } of lines) {
       dimensions: dims,
       // The IKEA model is used unscaled, so modelId (the ABO stand-in) is null.
       modelId: null,
-      mount: MOUNT[cat] ?? "floor",
+      mount: mountFor(cat, p.name),
       dominantHex: hexFor(p.color, p.name),
       styleTags: [cat, p.color, "ikea"].filter(Boolean).map((s) => String(s).toLowerCase()),
       // Measured off IKEA's own mesh, which is the product. Not a transcription.

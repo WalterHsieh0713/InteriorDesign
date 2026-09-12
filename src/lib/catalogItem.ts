@@ -25,7 +25,7 @@ export const CatalogItemSchema = z.object({
   // The UI must label these as representative — see REPRESENTATIVE_MODEL_NOTE.
   modelId: z.string().nullable(),
 
-  mount: z.enum(["floor", "wall", "tabletop"]),
+  mount: z.enum(["floor", "wall", "tabletop", "ceiling"]),
   dominantHex: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   styleTags: z.array(z.string()),
 

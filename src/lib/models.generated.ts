@@ -11,7 +11,7 @@
 
 import type { ObjectCategory } from "./roomLayoutSchema";
 
-export type ModelMount = "floor" | "wall" | "tabletop";
+export type ModelMount = "floor" | "wall" | "tabletop" | "ceiling";
 
 export type CatalogModel = {
   id: string;

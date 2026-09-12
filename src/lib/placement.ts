@@ -1,7 +1,7 @@
 import type { RoomLayout } from "./roomLayoutSchema";
 import { CATALOG_BY_ID } from "./catalog";
 
-export type Mount = "floor" | "wall" | "tabletop";
+export type Mount = "floor" | "wall" | "tabletop" | "ceiling";
 
 /**
  * How a room object installs.
@@ -144,6 +144,12 @@ export function initialPlacement(
   const mount = mountOf(item);
   const halfH = item.dimensions[1] / 2;
 
+  if (mount === "ceiling") {
+    // Straight over the middle of the room, which is where a light usually
+    // wants to be anyway.
+    return hangFromCeiling(item, 0, 0, room);
+  }
+
   if (mount === "wall") {
     const snap = snapToWall(item, 0, Math.min(1.5, room.height - halfH), -room.length / 2, room);
     return snap.position;
@@ -175,6 +181,24 @@ export function initialPlacement(
     }
   }
   return [0, halfH, 0];
+}
+
+/**
+ * Hang something from the ceiling.
+ *
+ * A pendant has one degree of freedom that matters — where over the floor it
+ * hangs — and one that must never change: it is fixed to the ceiling. Letting a
+ * chandelier be dragged down to knee height would be a bug, not a feature, so
+ * the height is not a free parameter at all.
+ */
+export function hangFromCeiling(
+  item: Obj,
+  x: number,
+  z: number,
+  room: RoomLayout["room"]
+): [number, number, number] {
+  const [cx, cz] = clampToRoom(item, x, z, room);
+  return [cx, room.height - item.dimensions[1] / 2, cz];
 }
 
 /** How close a floor item must come to a wall before it jumps flush against it. */
