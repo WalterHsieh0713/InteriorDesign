@@ -146,6 +146,9 @@ function faceGeometryFor(
     case "dishwasher":
     case "washerDryer":
     case "oven":
+    // Artwork most of all: a picture frame whose picture is a flat average
+    // colour is just a rectangle.
+    case "artwork":
       return { offset: new THREE.Vector3(0, 0, d / 2), normal: new THREE.Vector3(0, 0, 1), faceW: w, faceH: h };
     // Horizontal top surface.
     case "table":
@@ -541,6 +544,109 @@ function FurnitureGeometry({ category, dimensions, color, opacity }: Props) {
             roughness={0.1}
             metalness={0.1}
           />
+        </group>
+      );
+    }
+
+    // Flat wall fittings. They all end up the same shape — a thin plate with
+    // a slightly inset face — so they share one case rather than five
+    // near-identical ones. The inset is what stops them reading as stickers
+    // painted onto the wall.
+    case "thermostat":
+    case "outlet":
+    case "lightSwitch":
+    case "vent":
+    case "clock": {
+      const plate = Math.max(d, 0.015);
+      return (
+        <group>
+          <Panel size={[w, h, plate]} offset={[0, 0, 0]} color={color} opacity={opacity} roughness={0.5} />
+          <Panel
+            size={[w * 0.66, h * 0.66, plate * 0.5]}
+            offset={[0, 0, plate * 0.5]}
+            color={dark}
+            opacity={opacity}
+            roughness={0.35}
+          />
+        </group>
+      );
+    }
+
+    case "smokeAlarm": {
+      const radius = Math.max(Math.min(w, h), 0.02) / 2;
+      const depth = Math.max(d, 0.02);
+      return (
+        <mesh rotation={[Math.PI / 2, 0, 0]} castShadow receiveShadow>
+          <cylinderGeometry args={[radius, radius * 0.92, depth, 20]} />
+          <meshStandardMaterial color={color} roughness={0.6} opacity={opacity} transparent={opacity < 1} />
+        </mesh>
+      );
+    }
+
+    case "artwork": {
+      const frameDepth = Math.max(d, 0.02);
+      return (
+        <group>
+          <Panel size={[w, h, frameDepth]} offset={[0, 0, 0]} color={dark} opacity={opacity} roughness={0.7} />
+          {/* The canvas takes the projected photo when a camera saw it —
+              artwork is the one small item where the real image is the whole
+              point of the object. */}
+          <Panel
+            size={[w * 0.88, h * 0.88, frameDepth * 0.4]}
+            offset={[0, 0, frameDepth * 0.4]}
+            color={color}
+            opacity={opacity}
+            roughness={0.85}
+            usePhoto
+          />
+        </group>
+      );
+    }
+
+    case "keyboard": {
+      return (
+        <group>
+          <Panel size={[w, h, d]} offset={[0, 0, 0]} color={color} opacity={opacity} roughness={0.7} />
+          <Panel
+            size={[w * 0.94, h * 0.25, d * 0.88]}
+            offset={[0, h * 0.4, 0]}
+            color={shade(color, 12)}
+            opacity={opacity}
+            roughness={0.6}
+          />
+        </group>
+      );
+    }
+
+    case "speaker": {
+      return (
+        <group>
+          <Panel size={[w, h, d]} offset={[0, 0, 0]} color={color} opacity={opacity} roughness={0.75} />
+          <mesh position={[0, 0, d / 2 + 0.002]} castShadow receiveShadow>
+            <cylinderGeometry args={[Math.min(w, h) * 0.3, Math.min(w, h) * 0.3, 0.006, 16]} />
+            <meshStandardMaterial color={shade(color, -20)} roughness={0.9} />
+          </mesh>
+        </group>
+      );
+    }
+
+    case "books": {
+      // A run of individual spines rather than one block, so a row of books
+      // doesn't read as a solid brick.
+      const count = Math.max(3, Math.min(9, Math.round(w / 0.04)));
+      const spine = w / count;
+      return (
+        <group>
+          {Array.from({ length: count }, (_, i) => (
+            <Panel
+              key={i}
+              size={[spine * 0.85, h * (0.82 + ((i * 37) % 18) / 100), d]}
+              offset={[-w / 2 + spine * (i + 0.5), 0, 0]}
+              color={i % 3 === 0 ? shade(color, 14) : i % 3 === 1 ? shade(color, -12) : color}
+              opacity={opacity}
+              roughness={0.9}
+            />
+          ))}
         </group>
       );
     }

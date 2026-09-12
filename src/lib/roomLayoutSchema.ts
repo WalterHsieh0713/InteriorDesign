@@ -30,6 +30,20 @@ export const OBJECT_CATEGORIES = [
   "bathtub",
   "fireplace",
   "stairs",
+  // Small items. LiDAR cannot see any of these — CapturedRoom.Object.Category
+  // is a fixed 16-value Apple enum with no concept of a thermostat — so they
+  // come from /api/detect-details instead, which finds them in the captured
+  // photos and back-projects them onto the already-scanned geometry.
+  "keyboard",
+  "speaker",
+  "clock",
+  "artwork",
+  "thermostat",
+  "smokeAlarm",
+  "outlet",
+  "lightSwitch",
+  "vent",
+  "books",
   "door",
   "window",
   "other",
@@ -38,8 +52,19 @@ export const OBJECT_CATEGORIES = [
 /// Categories that describe the room's structure rather than its contents.
 /// These are measured in place and dragging them is always a mistake — a door
 /// halfway across the floor is nonsense, and moving one silently corrupts the
-/// only record of where the real opening was.
-export const FIXED_CATEGORIES: readonly string[] = ["door", "window", "stairs", "fireplace"];
+/// only record of where the real opening was. The small wall-mounted fittings
+/// are here for the same reason: a light switch is part of the wall.
+export const FIXED_CATEGORIES: readonly string[] = [
+  "door",
+  "window",
+  "stairs",
+  "fireplace",
+  "thermostat",
+  "smokeAlarm",
+  "outlet",
+  "lightSwitch",
+  "vent",
+];
 
 export const SURFACE_MATERIALS = [
   "carpet",
